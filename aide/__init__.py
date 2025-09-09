@@ -17,7 +17,7 @@ class Solution:
 
 class Experiment:
 
-    def __init__(self, data_dir: str, goal: str, eval: str | None = None):
+    def __init__(self, data_dir: str, goal: str, eval: str | None = None, initial_code: str = None,):
         """Initialize a new experiment run.
 
         Args:
@@ -42,6 +42,7 @@ class Experiment:
             task_desc=self.task_desc,
             cfg=self.cfg,
             journal=self.journal,
+            initial_code=initial_code,  # Pass initial code to agent
         )
         self.interpreter = Interpreter(
             self.cfg.workspace_dir, **OmegaConf.to_container(self.cfg.exec)  # type: ignore

@@ -75,6 +75,7 @@ class Agent:
         task_desc: str,
         cfg: Config,
         journal: Journal,
+        initial_code=None
     ):
         super().__init__()
         self.task_desc = task_desc
@@ -84,8 +85,16 @@ class Agent:
         self.data_preview: str | None = None
         self.start_time = time.time()
         self.current_step = 0
+        self.initial_code = initial_code
+        self.current_solution = None
 
     def search_policy(self) -> Node | None:
+        """
+        Modified to return current solution instead of tree search.
+        """
+        return self.current_solution
+    
+    def search_policy2(self) -> Node | None:
         """Select a node to work on (or None to draft a new node)."""
         search_cfg = self.acfg.search
 
@@ -337,6 +346,13 @@ class Agent:
         self.data_preview = data_preview.generate(self.cfg.workspace_dir)
 
     def step(self, exec_callback: ExecCallbackType):
+        """
+        Linear single-solution iteration:
+        - Use provided initial_code as the first solution (if present)
+        - Evaluate it, then iteratively either debug or improve the current solution
+        - Keep using existing evaluator (`parse_exec_result`), debug (`_debug`) and
+          improve (`_improve`) helpers from this class so core features remain.
+        """
         # clear the submission dir from previous steps
         shutil.rmtree(self.cfg.workspace_dir / "submission", ignore_errors=True)
         (self.cfg.workspace_dir / "submission").mkdir(exist_ok=True)
@@ -344,12 +360,27 @@ class Agent:
         if not self.journal.nodes or self.data_preview is None:
             self.update_data_preview()
 
-        parent_node = self.search_policy()
-        logger.info(f"Agent is generating code, parent node type: {type(parent_node)}")
+        # Use the given initial code for the first step
+        if self.current_solution is None:
+            if self.initial_code:
+                # Create initial node from provided code
+                initial_node = Node(plan="Initial provided solution", code=self.initial_code)
+                self.current_solution = initial_node
+                logger.info(f"Using provided initial code solution, node type: {type(initial_node)}")
+            else:
+                # parent_node = self.search_policy()
+                self.current_solution = self.search_policy2()
+                logger.info(f"Agent is generating code, parent node type: {type(self.current_solution)}")
 
-        if parent_node is None:
+        # Use current solution as parent for improvement/debugging
+        parent_node = self.current_solution
+
+        # Determine what action to take based on current solution state
+        if self.current_solution is None:
+        # if parent_node is None:
             result_node = self._draft()
-        elif parent_node.is_buggy:
+        elif self.current_solution.is_buggy:
+        # elif parent_node.is_buggy:
             result_node = self._debug(parent_node)
         else:
             result_node = self._improve(parent_node)
@@ -358,6 +389,10 @@ class Agent:
             node=result_node,
             exec_result=exec_callback(result_node.code, True),
         )
+
+        # Update current solution to the new result
+        self.current_solution = result_node
+        
         # handle final cases where we missed buggy nodes somehow
         if not result_node.is_buggy:
             if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
