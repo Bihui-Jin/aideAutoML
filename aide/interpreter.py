@@ -290,7 +290,7 @@ class Interpreter:
         # waiting until the queue is empty is not enough since
         # the feeder thread in child might still be adding to the queue
         while not self.result_outq.empty() or not output or output[-1] != "<|EOF|>":
-            output.append(self.result_outq.pop())
+            output.append(self.result_outq.get(block=True, timeout=3))
         output.pop()  # remove the EOF marker
 
         e_cls_name, exc_info, exc_stack = state[1:]
