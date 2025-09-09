@@ -3,6 +3,8 @@ import logging
 import random
 import time
 from typing import Any, Callable, cast
+import subprocess
+import json
 
 import humanize
 from .backend import FunctionSpec, compile_prompt_to_md, query
@@ -452,8 +454,21 @@ class Agent:
             node.metric = WorstMetricValue()
         else:
             logger.info(f"Parsed results: Node {node.id} is not buggy")
+            file_path = str(self.cfg.workspace_dir / "submission" / "submission.csv")
+            res = subprocess.run(
+                ["curl", "-sS", "-X", "POST",
+                "-F", f"file=@{file_path}",
+                'http://localhost:5000/grade'],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            grade = res.stdout if res.stdout is not None else WorstMetricValue() if res.returncode == 0 else WorstMetricValue()
+
+            logger.info(f"Submission Grading: {res}, {has_csv_submission}")
+            logger.info(f"Grade: {grade}")
             node.metric = MetricValue(
-                response["metric"], maximize=not response["lower_is_better"]
+                grade, maximize=not response["lower_is_better"]
             )
 
         return node
