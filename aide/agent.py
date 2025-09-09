@@ -463,6 +463,9 @@ class Agent:
                 capture_output=True,
                 text=True,
             )
+
+            logger.info(f"Grading result: {res}\n{res.stdout}")
+
             grade = json.loads(res.stdout).get('score', WorstMetricValue()) if res.stdout is not None and 'error' not in json.loads(res.stdout) else WorstMetricValue() if res.returncode == 0 else WorstMetricValue()
 
             logger.info(f"Submission Grading: {res}, {has_csv_submission}")
