@@ -88,13 +88,13 @@ class Agent:
         self.initial_code = initial_code
         self.current_solution = None
 
-    def search_policy(self) -> Node | None:
+    def search_policy2(self) -> Node | None:
         """
         Modified to return current solution instead of tree search.
         """
         return self.current_solution
     
-    def search_policy2(self) -> Node | None:
+    def search_policy(self) -> Node | None:
         """Select a node to work on (or None to draft a new node)."""
         search_cfg = self.acfg.search
 
@@ -369,7 +369,7 @@ class Agent:
                 logger.info(f"Using provided initial code solution, node type: {type(initial_node)}")
             else:
                 # parent_node = self.search_policy()
-                self.current_solution = self.search_policy2()
+                self.current_solution = self.search_policy()
                 logger.info(f"Agent is generating code, parent node type: {type(self.current_solution)}")
 
         # Use current solution as parent for improvement/debugging
@@ -499,12 +499,23 @@ class Agent:
                 text=True,
             )
 
-            logger.info(f"Grading result: {res}\n{res.stdout}")
+            logger.info(f"Grading result: {res.stdout}")
 
-            grade = json.loads(res.stdout).get('score', WorstMetricValue()) if res.stdout is not None and 'error' not in json.loads(res.stdout) else WorstMetricValue() if res.returncode == 0 else WorstMetricValue()
+            grade = WorstMetricValue()
+            if res.returncode == 0 and res.stdout is not None:
+                try:
+                    response_data = json.loads(res.stdout)
+                    grade = response_data.get('score', WorstMetricValue())
+                    if grade is None or not isinstance(grade, (float)):
+                        grade = WorstMetricValue()
+                    else:
+                        grade = float(grade)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON in grading response: {res.stdout}")
+                    grade = WorstMetricValue()
+                
 
-            logger.info(f"Submission Grading: {res}, {has_csv_submission}")
-            logger.info(f"Grade: {grade}")
+            logger.info(f"Submission Grading: {grade}, {has_csv_submission}")
             node.metric = MetricValue(
                 grade, maximize=not response["lower_is_better"]
             )
