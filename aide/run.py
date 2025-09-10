@@ -89,7 +89,7 @@ def journal_to_string_tree(journal: Journal) -> str:
     return tree_str
 
 
-def run(initial_code_file=None):
+def run():
     try:
         cfg = load_cfg()
         log_format = "[%(asctime)s] %(levelname)s: %(message)s"
@@ -135,10 +135,13 @@ def run(initial_code_file=None):
         atexit.register(cleanup)
 
         initial_code = None
-        if initial_code_file:
-            with open(initial_code_file, 'r') as f:
-                initial_code = f.read()
+        with open('/home/agent/init_code.txt', 'r') as f:
+            initial_code = f.read()
 
+        if len(initial_code.strip()) == 0:
+            initial_code = None
+            logger.info("No initial code provided")
+            
         journal = Journal()
         agent = Agent(
             task_desc=task_desc,
