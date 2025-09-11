@@ -365,16 +365,49 @@ class Agent:
             if self.current_solution is None:
                 # Create initial node from provided code
                 initial_node = Node(plan="Initial provided solution", code=self.initial_code)
+                # Execute and evaluate the initial code immediately
+                initial_node = self.parse_exec_result(
+                            node=initial_node,
+                            exec_result=exec_callback(initial_node.code, True),
+                        )
+                # Add to journal and set as current solution
+                self.journal.append(initial_node)
                 self.current_solution = initial_node
                 logger.info(f"Using provided initial code solution, node type: {type(initial_node)}")
 
+                # Handle the submission check for initial node
+                if not initial_node.is_buggy:
+                    if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
+                        initial_node.is_buggy = True
+                        initial_node.metric = WorstMetricValue()
+                        logger.info(f"Initial node {initial_node.id} did not produce a submission.csv")
+                
+                # Check if this initial node should be cached as best
+                best_node = self.journal.get_best_node()
+                if best_node is not None and best_node.id == initial_node.id:
+                    logger.info(f"Initial node {initial_node.id} is the best node so far")
+                    best_solution_dir = self.cfg.workspace_dir / "best_solution"
+                    best_solution_dir.mkdir(exist_ok=True, parents=True)
+                    best_submission_dir = self.cfg.workspace_dir / "best_submission"
+                    best_submission_dir.mkdir(exist_ok=True, parents=True)
+                    if (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
+                        shutil.copy(
+                            self.cfg.workspace_dir / "submission" / "submission.csv",
+                            best_submission_dir,
+                        )
+                    with open(best_solution_dir / "solution.py", "w") as f:
+                        f.write(initial_node.code)
+                    with open(best_solution_dir / "node_id.txt", "w") as f:
+                        f.write(str(initial_node.id))
+                
+                self.current_step += 1
+                return  # Exit early after processing initial code
+        
             # Use current solution as parent for improvement/debugging
             parent_node = self.current_solution
 
             # Determine what action to take based on current solution state
-            if parent_node is None:
-                result_node = self._draft()
-            elif parent_node.is_buggy:
+            if parent_node.is_buggy:
                 result_node = self._debug(parent_node)
             else:
                 result_node = self._improve(parent_node)
