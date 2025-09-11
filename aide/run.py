@@ -90,7 +90,7 @@ def journal_to_string_tree(journal: Journal) -> str:
 
 
 def run():
-    try:
+    # try:
         cfg = load_cfg()
         log_format = "[%(asctime)s] %(levelname)s: %(message)s"
         logging.basicConfig(
@@ -209,21 +209,22 @@ def run():
         interpreter.cleanup_session()
 
         logger.info("AIDE completed successfully")
-        return 0
+        # return 0
     
-    except KeyboardInterrupt:
-        logger.info("AIDE interrupted by user")
-        if 'interpreter' in locals():
-            interpreter.cleanup_session()
-        return 130
-    except Exception as e:
-        logger.error(f"AIDE failed with error: {e}")
-        if 'interpreter' in locals():
-            interpreter.cleanup_session()
-        return 1
+    # except KeyboardInterrupt:
+    #     logger.info("AIDE interrupted by user")
+    #     if 'interpreter' in locals():
+    #         interpreter.cleanup_session()
+    #     return 130
+    # except Exception as e:
+    #     logger.error(f"AIDE failed with error: {e}")
+    #     if 'interpreter' in locals():
+    #         interpreter.cleanup_session()
+    #     return 1
 
 
 if __name__ == "__main__":
-    exit_code = run()
-    # prevents the script from hanging for hours when aide exits early due to errors, disk space issues, or other problems
-    sys.exit(exit_code)
+    # exit_code = run()
+    # # prevents the script from hanging for hours when aide exits early due to errors, disk space issues, or other problems
+    # sys.exit(exit_code)
+    run()
