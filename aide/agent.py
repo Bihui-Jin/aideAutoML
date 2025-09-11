@@ -360,7 +360,7 @@ class Agent:
         if not self.journal.nodes or self.data_preview is None:
             self.update_data_preview()
 
-        if self.initial_node is not None:
+        if self.initial_code is not None:
             # Use the given initial code for the first step
             if self.current_solution is None:
                 # Create initial node from provided code
