@@ -176,20 +176,44 @@ class Interpreter:
             return
         
         try:
-            # give the child process a chance to terminate gracefully
-            self.process.terminate()
-            self.process.join(timeout=2)
-            # kill the child process if it's still alive
-            if self.process.exitcode is None:
-                logger.warning("Child process failed to terminate gracefully, killing it..")
-                try:
-                    self.process.kill()
-                    self.process.join(timeout=3)
-                except Exception as e:
-                    logger.error(f"Error during force kill: {e}")
-            # don't wait for gc, clean up immediately
-            self.process.close()
-            self.process = None  # type: ignore
+            # # give the child process a chance to terminate gracefully
+            # self.process.terminate()
+            # self.process.join(timeout=2)
+            # # kill the child process if it's still alive
+            # if self.process.exitcode is None:
+            #     logger.warning("Child process failed to terminate gracefully, killing it..")
+            #     try:
+            #         self.process.kill()
+            #         self.process.join(timeout=3)
+            #     except Exception as e:
+            #         logger.error(f"Error during force kill: {e}")
+            # # don't wait for gc, clean up immediately
+            # self.process.close()
+            # self.process = None  # type: ignore
+
+            # Check if process has necessary attributes before using them
+            if hasattr(self.process, 'terminate') and hasattr(self.process, 'is_alive'):
+                if self.process.is_alive():
+                    logger.debug("Terminating child process gracefully")
+                    self.process.terminate()
+                    
+                    # Wait with timeout for graceful termination
+                    if hasattr(self.process, 'join'):
+                        self.process.join(timeout=5)
+                    
+                    # If still alive, force kill
+                    if hasattr(self.process, 'exitcode') and self.process.exitcode is None:
+                        logger.warning("Child process failed to terminate gracefully, force killing...")
+                        try:
+                            if hasattr(self.process, 'kill'):
+                                self.process.kill()
+                                self.process.join(timeout=3)
+                        except Exception as e:
+                            logger.error(f"Error during force kill in cleanup: {e}")
+            
+            # Always close the process to free resources
+            if hasattr(self.process, 'close'):
+                self.process.close()
 
         except Exception as e:
             logger.error(f"Error gracefully terminating child process: {e}")
@@ -270,17 +294,23 @@ class Interpreter:
                 break
             except queue.Empty:
                 # we haven't heard back from the child -> check if it's still alive (assuming overtime interrupt wasn't sent yet)
-                if not child_in_overtime and not self.process.is_alive():
+                if not child_in_overtime and (self.process is None or not self.process.is_alive()):
                     msg = "REPL child process died unexpectedly"
                     logger.critical(msg)
                     queue_dump = ""
-                    while not self.result_outq.empty():
-                        queue_dump = self.result_outq.get()
-                        logger.error(f"REPL output queue dump: {queue_dump[:1000]}")
+                    try:
+                        while not self.result_outq.empty():
+                            queue_dump = str(self.result_outq.get_nowait())
+                            logger.error(f"REPL output queue dump: {queue_dump[:1000]}")
+                    except:
+                        pass
+                    # while not self.result_outq.empty():
+                    #     queue_dump = self.result_outq.get()
+                    #     logger.error(f"REPL output queue dump: {queue_dump[:1000]}")
                     self.cleanup_session()
                     return ExecutionResult(
                         term_out=[msg, queue_dump],
-                        exec_time=0,
+                        exec_time=time.time() - start_time,
                         exc_type="RuntimeError",
                         exc_info={},
                         exc_stack=[],
@@ -295,30 +325,85 @@ class Interpreter:
                     # [TODO] handle this in a better way
                     assert reset_session, "Timeout ocurred in interactive session"
 
-                    try:
-                        # send interrupt to child
-                        # Try SIGTERM first (more graceful than SIGKILL)
-                        os.kill(self.process.pid, signal.SIGINT)  # type: ignore
-                        time.sleep(3)
+                    # For interactive sessions, we can't just kill the process
+                    if not reset_session:
+                        logger.error("Timeout occurred in interactive session - this requires manual intervention")
+                        self.cleanup_session()
+                        return ExecutionResult(
+                            term_out=["TimeoutError: Interactive session timed out"],
+                            exec_time=running_time,
+                            exc_type="TimeoutError",
+                            exc_info={"message": "Interactive session timeout"},
+                            exc_stack=[],
+                        )
+    
+                    if not child_in_overtime:
+                        # First timeout attempt - send SIGINT
+                        try:
+                            # Check if process still exists before trying to kill it
+                            if self.process is not None and self.process.pid is not None:
+                                logger.info(f"Sending SIGINT to child process {self.process.pid}")
+                                os.kill(self.process.pid, signal.SIGINT)
+                                child_in_overtime = True
+                            else:
+                                logger.warning("Process is None or has no PID, cannot send SIGINT")
+                                child_in_overtime = True
+                        except ProcessLookupError:
+                            logger.warning("Child process already terminated")
+                            child_in_overtime = True
+                        except Exception as e:
+                            logger.error(f"Failed to send SIGINT to child process: {e}")
+                            child_in_overtime = True
 
-                        # If still alive, use SIGKILL
-                        if self.process.is_alive():
-                            os.kill(self.process.pid, signal.SIGKILL)
+                    # try:
+                    #     # send interrupt to child
+                    #     # Try SIGTERM first (more graceful than SIGKILL)
+                    #     os.kill(self.process.pid, signal.SIGINT)  # type: ignore
+                    #     time.sleep(3)
 
-                    except ProcessLookupError:
-                        logger.info("Child process already terminated during force kill")
-                    except Exception as e:
-                        logger.error(f"Error during force kill: {e}")
+                    #     # If still alive, use SIGKILL
+                    #     if self.process.is_alive():
+                    #         os.kill(self.process.pid, signal.SIGKILL)
 
-                    self.cleanup_session()
+                    # except ProcessLookupError:
+                    #     logger.info("Child process already terminated during force kill")
+                    # except Exception as e:
+                    #     logger.error(f"Error during force kill: {e}")
 
-                    child_in_overtime = True
+                    # self.cleanup_session()
+
+                    # child_in_overtime = True
+
                     # terminate if we're overtime by more than a minute
                     if running_time > self.timeout + 60:
-                        logger.warning("Child failed to terminate, killing it..")
-                        self.cleanup_session()
+                        # logger.warning("Child failed to terminate, killing it..")
+                        # self.cleanup_session()
 
-                        state = (None, "TimeoutError", {}, [])
+                        # state = (None, "TimeoutError", {}, [])
+                        # exec_time = self.timeout
+                        # break
+                        logger.warning(f"Child failed to terminate after 60s grace period, force killing...")
+                        try:
+                            # Check if process exists and is alive before killing
+                            if self.process is not None and hasattr(self.process, 'pid') and self.process.pid is not None:
+                                # Try SIGTERM first (more graceful than SIGKILL)
+                                os.kill(self.process.pid, signal.SIGTERM)
+                                time.sleep(2)  # Give it 2 seconds to respond
+                                
+                                # Check if still alive before SIGKILL
+                                if hasattr(self.process, 'is_alive') and self.process.is_alive():
+                                    os.kill(self.process.pid, signal.SIGKILL)
+                            else:
+                                logger.warning("Process is None or has no PID, cannot force kill")
+                                
+                        except ProcessLookupError:
+                            logger.info("Child process already terminated during force kill")
+                        except Exception as e:
+                            logger.error(f"Error during force kill: {e}")
+                        
+                        # Clean up and return timeout result
+                        self.cleanup_session()
+                        state = (None, "TimeoutError", {"message": "Process force killed after timeout"}, [])
                         exec_time = self.timeout
                         break
 
