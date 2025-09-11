@@ -174,17 +174,39 @@ class Interpreter:
     def cleanup_session(self):
         if self.process is None:
             return
-        # give the child process a chance to terminate gracefully
-        self.process.terminate()
-        self.process.join(timeout=2)
-        # kill the child process if it's still alive
-        if self.process.exitcode is None:
-            logger.warning("Child process failed to terminate gracefully, killing it..")
-            self.process.kill()
-            self.process.join()
-        # don't wait for gc, clean up immediately
-        self.process.close()
-        self.process = None  # type: ignore
+        
+        try:
+            # give the child process a chance to terminate gracefully
+            self.process.terminate()
+            self.process.join(timeout=2)
+            # kill the child process if it's still alive
+            if self.process.exitcode is None:
+                logger.warning("Child process failed to terminate gracefully, killing it..")
+                try:
+                    self.process.kill()
+                    self.process.join(timeout=3)
+                except Exception as e:
+                    logger.error(f"Error during force kill: {e}")
+            # don't wait for gc, clean up immediately
+            self.process.close()
+            self.process = None  # type: ignore
+
+        except Exception as e:
+            logger.error(f"Error gracefully terminating child process: {e}")
+        finally:
+            self.process = None
+            
+            # Clear queues to prevent memory leaks
+            try:
+                while not self.result_outq.empty():
+                    self.result_outq.get_nowait()
+            except:
+                pass
+            try:
+                while not self.event_outq.empty():
+                    self.event_outq.get_nowait()
+            except:
+                pass
 
     def run(self, code: str, reset_session=True) -> ExecutionResult:
         """
@@ -273,8 +295,23 @@ class Interpreter:
                     # [TODO] handle this in a better way
                     assert reset_session, "Timeout ocurred in interactive session"
 
-                    # send interrupt to child
-                    os.kill(self.process.pid, signal.SIGINT)  # type: ignore
+                    try:
+                        # send interrupt to child
+                        # Try SIGTERM first (more graceful than SIGKILL)
+                        os.kill(self.process.pid, signal.SIGINT)  # type: ignore
+                        time.sleep(3)
+
+                        # If still alive, use SIGKILL
+                        if self.process.is_alive():
+                            os.kill(self.process.pid, signal.SIGKILL)
+
+                    except ProcessLookupError:
+                        logger.info("Child process already terminated during force kill")
+                    except Exception as e:
+                        logger.error(f"Error during force kill: {e}")
+
+                    self.cleanup_session()
+
                     child_in_overtime = True
                     # terminate if we're overtime by more than a minute
                     if running_time > self.timeout + 60:
@@ -286,12 +323,33 @@ class Interpreter:
                         break
 
         output: list[str] = []
+        output_timeout = 30  # Maximum time to wait for all output
+        output_start_time = time.time()
         # read all stdout/stderr from child up to the EOF marker
         # waiting until the queue is empty is not enough since
         # the feeder thread in child might still be adding to the queue
         while not self.result_outq.empty() or not output or output[-1] != "<|EOF|>":
-            output.append(self.result_outq.get(block=True, timeout=30))
-        output.pop()  # remove the EOF marker
+            try:
+                # Check if we've been waiting too long for output
+                if time.time() - output_start_time > output_timeout:
+                    logger.warning("Timeout while collecting output from child process")
+                    output.append("WARNING: Output collection timed out")
+                    break
+                # wait up to 30s for output (shouldn't take that long)
+                output.append(self.result_outq.get(block=True,timeout=30))
+            except queue.Empty:
+                # Check if child process is still alive
+                if not self.process.is_alive():
+                    logger.info("Child process terminated while collecting output")
+                    break
+                
+                # If we have output and it doesn't end with EOF, something is wrong
+                if output and time.time() - output_start_time > 10:
+                    logger.warning("No EOF marker received, child process may have crashed")
+                    break
+        # Remove EOF marker if present
+        if output and output[-1] == "<|EOF|>":
+            output.pop()  # remove the EOF marker
 
         e_cls_name, exc_info, exc_stack = state[1:]
 
