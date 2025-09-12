@@ -6,6 +6,8 @@ from typing import Any, Callable, cast
 import subprocess
 import json
 
+import os
+
 import humanize
 from .backend import FunctionSpec, compile_prompt_to_md, query
 from .interpreter import ExecutionResult
@@ -590,7 +592,90 @@ class Agent:
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON in grading response: {res.stdout}")
                     grade = WorstMetricValue()
-                
+            
+            compare = {'jigsaw-toxic-comment-classification-challenge': False,
+                        'google-quest-challenge': False,
+                        'detecting-insults-in-social-commentary': False,
+                        'tabular-playground-series-may-2022': False,
+                        'denoising-dirty-documents': True,
+                        'aerial-cactus-identification': False,
+                        'tweet-sentiment-extraction': False,
+                        'cassava-leaf-disease-classification': False,
+                        'aptos2019-blindness-detection': False,
+                        'random-acts-of-pizza': False,
+                        'new-york-city-taxi-fare-prediction': True,
+                        'nomad2018-predict-transparent-conductors': True,
+                        'spooky-author-identification': True,
+                        'mlsp-2013-birds': False,
+                        'plant-pathology-2020-fgvc7': False,
+                        'champs-scalar-coupling': True,
+                        'uw-madison-gi-tract-image-segmentation': False,
+                        'histopathologic-cancer-detection': False,
+                        'bms-molecular-translation': True,
+                        'predict-volcanic-eruptions-ingv-oe': True,
+                        'h-and-m-personalized-fashion-recommendations': False,
+                        'smartphone-decimeter-2022': True,
+                        'hubmap-kidney-segmentation': False,
+                        'whale-categorization-playground': False,
+                        'text-normalization-challenge-russian-language': False,
+                        'nfl-player-contact-detection': False,
+                        'hms-harmful-brain-activity-classification': True,
+                        'tensorflow2-question-answering': False,
+                        'osic-pulmonary-fibrosis-progression': False,
+                        'plant-pathology-2021-fgvc8': False,
+                        'alaska2-image-steganalysis': False,
+                        'hotel-id-2021-fgvc8': False,
+                        'multi-modal-gesture-recognition': True,
+                        'herbarium-2020-fgvc7': False,
+                        'vesuvius-challenge-ink-detection': False,
+                        '3d-object-detection-for-autonomous-vehicles': False,
+                        'tabular-playground-series-dec-2021': False,
+                        'inaturalist-2019-fgvc6': True,
+                        'iwildcam-2020-fgvc7': False,
+                        'seti-breakthrough-listen': False,
+                        'icecube-neutrinos-in-deep-ice': True,
+                        'herbarium-2022-fgvc9': False,
+                        'herbarium-2021-fgvc8': False,
+                        'vinbigdata-chest-xray-abnormalities-detection': False,
+                        'rsna-breast-cancer-detection': False,
+                        'us-patent-phrase-to-phrase-matching': False,
+                        'chaii-hindi-and-tamil-question-answering': False,
+                        'leaf-classification': True,
+                        'statoil-iceberg-classifier-challenge': True,
+                        'tgs-salt-identification-challenge': False,
+                        'dog-breed-identification': True,
+                        'lmsys-chatbot-arena': True,
+                        'learning-agency-lab-automated-essay-scoring-2': False,
+                        'ventilator-pressure-prediction': True,
+                        'dogs-vs-cats-redux-kernels-edition': True,
+                        'facebook-recruiting-iii-keyword-extraction': False,
+                        'jigsaw-unintended-bias-in-toxicity-classification': False,
+                        'ranzcr-clip-catheter-line-classification': False,
+                        'text-normalization-challenge-english-language': False,
+                        'billion-word-imputation': True,
+                        'freesound-audio-tagging-2019': False,
+                        'the-icml-2013-whale-challenge-right-whale-redux': False,
+                        'petfinder-pawpularity-score': True,
+                        'kuzushiji-recognition': False,
+                        'iwildcam-2019-fgvc6': False,
+                        'imet-2020-fgvc7': False,
+                        'siim-isic-melanoma-classification': False,
+                        'rsna-miccai-brain-tumor-radiogenomic-classification': False,
+                        'siim-covid19-detection': False,
+                        'rsna-2022-cervical-spine-fracture-detection': True,
+                        'google-research-identify-contrails-reduce-global-warming': False,
+                        'stanford-covid-vaccine': True,
+                        'tensorflow-speech-recognition-challenge': False,
+                        'AI4Code': False,
+                        'cdiscount-image-classification-challenge': False}
+            
+            competition = os.getenv("COMPETITION_ID") 
+            if competition in compare:
+                maximize_setting = compare[competition]
+            else:
+                if response["lower_is_better"] is not None:
+                    maximize_setting = not response["lower_is_better"]
+                    compare[competition] = maximize_setting
 
             logger.info(f"Submission Grading: {grade}, {has_csv_submission}")
             node.metric = MetricValue(
