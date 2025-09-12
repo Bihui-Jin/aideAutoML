@@ -28,6 +28,17 @@ const setCodeAndPlan = (code, plan) => {
     metricElm.innerHTML = hljs.highlight(metric, { language: "plaintext" }).value;
   }
 
+  const exc_type_Elm = document.getElementById("exc_type");
+  if (exc_type_Elm) {
+    // metricElm.innerText = plan.trim();
+    exc_type_Elm.innerHTML = hljs.highlight(exc_type, { language: "plaintext" }).value;
+  }
+
+  const traceElm = document.getElementById("exc_info");
+  if (traceElm) {
+    // metricElm.innerText = plan.trim();
+    trace.innerHTML = hljs.highlight(trace, { language: "plaintext" }).value;
+  }
 };
 
 windowResized = () => {
@@ -138,6 +149,8 @@ class Node {
         treeStructData.code[this.treeInd],
         treeStructData.plan[this.treeInd],
         treeStructData.metric[this.treeInd],
+        treeStructData.exc_type[this.treeInd],
+        treeStructData.trace[this.treeInd],
       );
       manualSelection = true;
     }
@@ -336,6 +349,8 @@ draw = () => {
       treeStructData.code[0],
       treeStructData.plan[0],
       treeStructData.metric[0],
+      treeStructData.exc_type[0],
+      treeStructData.trace[0],
     )
   }
 
@@ -352,6 +367,8 @@ draw = () => {
           treeStructData.code[largestNode.treeInd],
           treeStructData.plan[largestNode.treeInd],
           treeStructData.metric[largestNode.treeInd],
+          treeStructData.exc_type[largestNode.treeInd],
+          treeStructData.trace[largestNode.treeInd],
         );
       }
       staticNodes.forEach((node) => {
