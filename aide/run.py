@@ -2,6 +2,7 @@ import atexit
 import logging
 import shutil
 import sys
+import traceback
 
 from . import backend
 
@@ -218,6 +219,7 @@ def run():
         return 130
     except Exception as e:
         logger.error(f"AIDE failed with error: {e}")
+        logger.error(f"Error details: {traceback.format_exc()}")
         if 'interpreter' in locals():
             interpreter.cleanup_session()
         return 1

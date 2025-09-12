@@ -679,7 +679,7 @@ class Agent:
 
             logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {maximize_setting}")
             node.metric = MetricValue(
-                grade, maximize=maximize_setting
+                grade, maximize=not maximize_setting
             )
 
         return node

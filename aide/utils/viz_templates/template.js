@@ -21,6 +21,13 @@ const setCodeAndPlan = (code, plan) => {
     // planElm.innerText = plan.trim();
     planElm.innerHTML = hljs.highlight(plan, { language: "plaintext" }).value;
   }
+
+  const metricElm = document.getElementById("metric");
+  if (metricElm) {
+    // metricElm.innerText = plan.trim();
+    metricElm.innerHTML = hljs.highlight(metric, { language: "plaintext" }).value;
+  }
+
 };
 
 windowResized = () => {
@@ -130,6 +137,7 @@ class Node {
       setCodeAndPlan(
         treeStructData.code[this.treeInd],
         treeStructData.plan[this.treeInd],
+        treeStructData.metric[this.treeInd],
       );
       manualSelection = true;
     }
@@ -327,6 +335,7 @@ draw = () => {
     setCodeAndPlan(
       treeStructData.code[0],
       treeStructData.plan[0],
+      treeStructData.metric[0],
     )
   }
 
@@ -342,6 +351,7 @@ draw = () => {
         setCodeAndPlan(
           treeStructData.code[largestNode.treeInd],
           treeStructData.plan[largestNode.treeInd],
+          treeStructData.metric[largestNode.treeInd],
         );
       }
       staticNodes.forEach((node) => {
