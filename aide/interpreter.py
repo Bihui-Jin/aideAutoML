@@ -191,34 +191,38 @@ class Interpreter:
             # self.process.close()
             # self.process = None  # type: ignore
 
+            process_to_clean = self.process
+            self.process = None
+
             # Check if process has necessary attributes before using them
-            if hasattr(self.process, 'terminate') and hasattr(self.process, 'is_alive'):
-                if self.process.is_alive():
-                    logger.debug("Terminating child process gracefully")
-                    self.process.terminate()
-                    
-                    # Wait with timeout for graceful termination
-                    if hasattr(self.process, 'join'):
-                        self.process.join(timeout=5)
-                    
-                    # If still alive, force kill
-                    if hasattr(self.process, 'exitcode') and self.process.exitcode is None:
-                        logger.warning("Child process failed to terminate gracefully, force killing...")
-                        try:
-                            if hasattr(self.process, 'kill'):
-                                self.process.kill()
-                                self.process.join(timeout=3)
-                        except Exception as e:
-                            logger.error(f"Error during force kill in cleanup: {e}")
-            
+            if hasattr(process_to_clean, 'is_alive') and process_to_clean.is_alive():
+                logger.debug("Terminating child process gracefully")
+                if hasattr(process_to_clean, 'terminate'):
+                    process_to_clean.terminate()
+
+                if process_to_clean.is_alive():
+                    process_to_clean.terminate()
+
+                # Wait with timeout for graceful termination
+                if hasattr(process_to_clean, 'join'):
+                    process_to_clean.join(timeout=5)
+
+                # If still alive, force kill
+                if process_to_clean.is_alive():
+                    logger.warning("Child process failed to terminate gracefully, force killing...")
+                    if hasattr(process_to_clean, 'kill'):
+                        process_to_clean.kill()
+                        if hasattr(process_to_clean, 'join'):
+                            process_to_clean.join(timeout=3)
+
             # Always close the process to free resources
-            if hasattr(self.process, 'close'):
-                self.process.close()
+            if hasattr(process_to_clean, 'close'):
+                process_to_clean.close()
 
         except Exception as e:
             logger.error(f"Error gracefully terminating child process: {e}")
         finally:
-            self.process = None
+            # self.process = None
             
             # Clear queues to prevent memory leaks
             try:
@@ -424,10 +428,11 @@ class Interpreter:
                 output.append(self.result_outq.get(block=True,timeout=30))
             except queue.Empty:
                 # Check if child process is still alive
-                if not self.process.is_alive():
+                current_process = self.process
+                if current_process is None or not current_process.is_alive():
                     logger.info("Child process terminated while collecting output")
                     break
-                
+
                 # If we have output and it doesn't end with EOF, something is wrong
                 if output and time.time() - output_start_time > 10:
                     logger.warning("No EOF marker received, child process may have crashed")
