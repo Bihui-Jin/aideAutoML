@@ -9,7 +9,7 @@ const updateTargetDims = () => {
   return [windowWidth * (1 / 2), windowHeight];
 };
 
-const setCodeAndPlan = (code, plan) => {
+const setCodeAndPlan = (code, plan, metric, trace) => {
   const codeElm = document.getElementById("code");
   if (codeElm) {
     // codeElm.innerText = code;
@@ -24,20 +24,16 @@ const setCodeAndPlan = (code, plan) => {
 
   const metricElm = document.getElementById("metric");
   if (metricElm) {
-    // metricElm.innerText = plan.trim();
-    metricElm.innerHTML = hljs.highlight(metric, { language: "plaintext" }).value;
+    // Ensure metric is a string before highlighting
+    const metricText = String(metric || "N/A");
+    metricElm.innerHTML = hljs.highlight(metricText, { language: "plaintext" }).value;
   }
 
-  const exc_type_Elm = document.getElementById("exc_type");
-  if (exc_type_Elm) {
-    // metricElm.innerText = plan.trim();
-    exc_type_Elm.innerHTML = hljs.highlight(exc_type, { language: "plaintext" }).value;
-  }
-
-  const traceElm = document.getElementById("exc_info");
+  const traceElm = document.getElementById("trace");
   if (traceElm) {
-    // metricElm.innerText = plan.trim();
-    trace.innerHTML = hljs.highlight(trace, { language: "plaintext" }).value;
+    // Ensure trace is a string
+    const traceText = String(trace || "No traceback available.");
+    traceElm.innerHTML = hljs.highlight(traceText, { language: "python" }).value;
   }
 };
 
@@ -96,6 +92,11 @@ class Node {
   edges = [];
   bgCol;
 
+  hasMetric = false;
+  isBest = false;
+  isWorst = false;
+
+
   constructor(x, y, relSize, treeInd) {
     const minSize = 35;
     const maxSize = 60;
@@ -148,9 +149,8 @@ class Node {
       setCodeAndPlan(
         treeStructData.code[this.treeInd],
         treeStructData.plan[this.treeInd],
-        treeStructData.metric[this.treeInd],
-        treeStructData.exc_type[this.treeInd],
-        treeStructData.trace[this.treeInd],
+        treeStructData.metrics[this.treeInd],
+        treeStructData.term_out[this.treeInd],
       );
       manualSelection = true;
     }
@@ -172,9 +172,18 @@ class Node {
       }
     }
 
-    fill(this.color);
+    // fill(this.color);
+    // --- COLOR LOGIC ---
     if (this.selected) {
-      fill(accentCol);
+      fill(accentCol); // Selected node is always the accent color
+    } else if (this.isBest) {
+      fill("#28a745"); // Best node is green
+    } else if (this.isWorst) {
+      fill("#FFA500"); // Worst node is orange
+    } else if (this.hasMetric) {
+      fill("#007bff"); // Nodes with a metric are blue
+    } else {
+      fill(this.color); // Default color
     }
 
     noStroke();
@@ -328,15 +337,47 @@ draw = () => {
   globalTime += globalAnimSpeed * initAnimationSpeedFactor * deltaTime;
 
   if (nodes.length == 0) {
+    let bestNodeIndex = -1;
+    let worstNodeIndex = -1;
+    let maxMetric = -Infinity;
+    let minMetric = Infinity;
+
+    treeStructData.metrics.forEach((metric, index) => {
+      if (!isNaN(metric) && metric > maxMetric) {
+        maxMetric = metric;
+        bestNodeIndex = index;
+      }
+      if (!isNaN(metric) && metric < minMetric) {
+          minMetric = metric;
+          worstNodeIndex = index;
+        }
+    });
+
     const spacingHeight = height * 1.3;
     const spacingWidth = width * 1.3;
     treeStructData.layout.forEach((lay, index) => {
-      new Node(
+
+      const metricValue = treeStructData.metrics[index];
+      const relSize = isNaN(metricValue) ? 1 : 1 - metricValue;
+
+      const node =new Node(
         spacingWidth * lay[0] - spacingWidth / 2,
         20 + spacingHeight * lay[1] - spacingHeight / 2,
-        1 - treeStructData.metrics[index],
+        // 1 - treeStructData.metrics[index],
+        relSize,
         index,
       );
+
+      // Set flags for special coloring
+      if (!isNaN(metricValue)) {
+        node.hasMetric = true;
+      }
+      if (index === bestNodeIndex) {
+        node.isBest = true;
+      }
+      if (index === worstNodeIndex) {
+        node.isWorst = true;
+      }
     });
     treeStructData.edges.forEach((ind) => {
       nodes[ind[0]].child(nodes[ind[1]]);
@@ -348,9 +389,8 @@ draw = () => {
     setCodeAndPlan(
       treeStructData.code[0],
       treeStructData.plan[0],
-      treeStructData.metric[0],
-      treeStructData.exc_type[0],
-      treeStructData.trace[0],
+      treeStructData.metrics[0],
+      treeStructData.term_out[0],
     )
   }
 
@@ -366,9 +406,8 @@ draw = () => {
         setCodeAndPlan(
           treeStructData.code[largestNode.treeInd],
           treeStructData.plan[largestNode.treeInd],
-          treeStructData.metric[largestNode.treeInd],
-          treeStructData.exc_type[largestNode.treeInd],
-          treeStructData.trace[largestNode.treeInd],
+          treeStructData.metrics[largestNode.treeInd],
+          treeStructData.term_out[largestNode.treeInd],
         );
       }
       staticNodes.forEach((node) => {
