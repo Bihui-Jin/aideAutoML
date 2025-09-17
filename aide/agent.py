@@ -681,8 +681,12 @@ class Agent:
                     compare[competition] = maximize_setting
 
             logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {maximize_setting}")
-            node.metric = MetricValue(
-                grade, maximize=not maximize_setting
-            )
+            
+            if isinstance(grade, WorstMetricValue):
+                node.metric = grade
+            else:
+                node.metric = MetricValue(
+                    grade, maximize=not maximize_setting
+                )
 
         return node
