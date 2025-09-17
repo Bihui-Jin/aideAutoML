@@ -77,7 +77,7 @@ class Agent:
         task_desc: str,
         cfg: Config,
         journal: Journal,
-        initial_code=None
+        initial_code=None,
     ):
         super().__init__()
         self.task_desc = task_desc
@@ -365,8 +365,11 @@ class Agent:
         if self.initial_code is not None:
             # Use the given initial code for the first step
             if self.current_solution is None:
+                code = extract_code(self.initial_code)
+                nl_text = extract_text_up_to_code(self.initial_code)
+                logger.info("Using provided initial code for the first step:\nCode:{code}\nPlan:{nl_text}".format(code=code, nl_text=nl_text))
                 # Create initial node from provided code
-                initial_node = Node(plan="Initial provided solution", code=self.initial_code)
+                initial_node = Node(plan=nl_text, code=code)
                 # Execute and evaluate the initial code immediately
                 initial_node = self.parse_exec_result(
                             node=initial_node,
