@@ -199,14 +199,19 @@ class Agent:
     def plan_and_code_query(self, prompt, retries=3) -> tuple[str, str]:
         """Generate a natural language plan + code in the same LLM call and split them apart."""
         completion_text = None
+
+        query_kwargs = {
+            "system_message": prompt,
+            "user_message": None,
+            "model": self.acfg.code.model,
+            "convert_system_to_user": self.acfg.convert_system_to_user,
+        }
+
+        if self.acfg.code.model != "gpt-5":
+            query_kwargs["temperature"] = self.acfg.code.temp
+
         for _ in range(retries):
-            completion_text = query(
-                system_message=prompt,
-                user_message=None,
-                model=self.acfg.code.model,
-                temperature=self.acfg.code.temp,
-                convert_system_to_user=self.acfg.convert_system_to_user,
-            )
+            completion_text = query(**query_kwargs)
 
             code = extract_code(completion_text)
             nl_text = extract_text_up_to_code(completion_text)
@@ -534,16 +539,28 @@ class Agent:
             "Execution output": wrap_code(node.term_out, lang=""),
         }
 
+        query_kwargs = {
+            "system_message": prompt,
+            "user_message": None,
+            "func_spec": review_func_spec,
+            "model": self.acfg.feedback.model,
+            "convert_system_to_user": self.acfg.convert_system_to_user,
+        }
+
+        if self.acfg.feedback.model != "gpt-5":
+            query_kwargs["temperature"] = self.acfg.feedback.temp
+
         response = cast(
             dict,
-            query(
-                system_message=prompt,
-                user_message=None,
-                func_spec=review_func_spec,
-                model=self.acfg.feedback.model,
-                temperature=self.acfg.feedback.temp,
-                convert_system_to_user=self.acfg.convert_system_to_user,
-            ),
+            query(**query_kwargs),
+            # query(
+            #     **query_kwargs
+            #     user_message=None,
+            #     func_spec=review_func_spec,
+            #     model=self.acfg.feedback.model,
+            #     temperature=self.acfg.feedback.temp,
+            #     convert_system_to_user=self.acfg.convert_system_to_user,
+            # ),
         )
 
         # if the metric isn't a float then fill the metric with the worst metric
