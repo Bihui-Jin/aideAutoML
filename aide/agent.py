@@ -210,8 +210,8 @@ class Agent:
         if self.acfg.code.model != "gpt-5":
             query_kwargs["temperature"] = self.acfg.code.temp
 
-        if self.acfg.code.model == "qwen3-max":
-            query_kwargs["base_url"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        # if self.acfg.code.model == "qwen3-max":
+        #     query_kwargs["base_url"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
         for _ in range(retries):
             completion_text = query(**query_kwargs)

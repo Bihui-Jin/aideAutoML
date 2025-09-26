@@ -27,9 +27,12 @@ OPENAI_TIMEOUT_EXCEPTIONS = (
 
 
 @once
-def _setup_openai_client():
+def _setup_openai_client(model: str):
     global _client
-    _client = openai.OpenAI(max_retries=0)
+    if model == "qwen3-max":
+        _client = openai.OpenAI(base_url='https://dashscope-intl.aliyuncs.com/compatible-mode/v1', max_retries=0)
+    else:
+        _client = openai.OpenAI(max_retries=0)
 
 
 def query(
@@ -39,7 +42,8 @@ def query(
     convert_system_to_user: bool = False,
     **model_kwargs,
 ) -> tuple[OutputType, float, int, int, dict]:
-    _setup_openai_client()
+    model = model_kwargs.get("model", "")
+    _setup_openai_client(model)
     filtered_kwargs: dict = select_values(notnone, model_kwargs)  # type: ignore
 
     messages = opt_messages_to_list(system_message, user_message, convert_system_to_user=convert_system_to_user)
