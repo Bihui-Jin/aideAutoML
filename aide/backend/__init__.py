@@ -6,7 +6,7 @@ logger = logging.getLogger("aide")
 
 
 def determine_provider(model: str) -> str:
-    if model.startswith("gpt-") or model.startswith("o1-"):
+    if model.startswith("gpt-") or model.startswith("o1-") or model.startswith("qwen"):
         return "openai"
     elif model.startswith("claude-"):
         return "anthropic"
