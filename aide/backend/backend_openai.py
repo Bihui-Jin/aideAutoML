@@ -87,37 +87,28 @@ def query(
             logger.error(
                 f"Error decoding the function arguments: {choice.message.tool_calls[0].function.arguments}"
             )
-            logger.error(f"JSON decode error: {e}")
             logger.error(f"Error position: line {e.lineno}, column {e.colno}")
             
             # Try to extract partial JSON or provide a fallback
             function_args = choice.message.tool_calls[0].function.arguments
+
             try:
-                # Try to find the JSON object boundaries and extract it
-                start_idx = function_args.find('{')
-                if start_idx != -1:
-                    # Find the matching closing brace
-                    brace_count = 0
-                    end_idx = start_idx
-                    for i, char in enumerate(function_args[start_idx:], start_idx):
-                        if char == '{':
-                            brace_count += 1
-                        elif char == '}':
-                            brace_count -= 1
-                            if brace_count == 0:
-                                end_idx = i + 1
-                                break
-                    
-                    if brace_count == 0:
-                        clean_json = function_args[start_idx:end_idx]
-                        logger.info(f"Attempting to parse extracted JSON: {clean_json}")
-                        output = json.loads(clean_json)
-                    else:
-                        raise e
+                # Remove any potential control characters or invisible characters
+                import re
+                cleaned_args = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', function_args)
+                
+                # Find the first { and last }
+                start = cleaned_args.find('{')
+                end = cleaned_args.rfind('}')
+                
+                if start != -1 and end != -1 and end > start:
+                    json_str = cleaned_args[start:end+1]
+                    logger.info(f"Attempting to parse cleaned JSON: {json_str}")
+                    output = json.loads(json_str)
                 else:
                     raise e
             except json.JSONDecodeError:
-                logger.error("Failed to extract valid JSON, falling back to error response")
+                logger.error(f"Failed to extract valid JSON in: {function_args}")
                 # Provide a fallback response that matches the expected schema
                 output = {
                     "is_bug": True,
