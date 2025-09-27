@@ -81,8 +81,14 @@ def query(
             # Clean up the function arguments string
             function_args_cleaned = function_args.strip()
 
-            # Normalize Python-style booleans to JSON-style booleans
-            # This handles the case where LLM returns True/False instead of true/false
+            # Fix common JSON formatting issues
+            # 1. Handle incomplete values like "metric": , -> "metric": null,
+            import re
+            function_args_cleaned = re.sub(r':\s*,', ': null,', function_args_cleaned)
+            function_args_cleaned = re.sub(r':\s*}', ': null}', function_args_cleaned)
+
+            # 2. Ensure proper JSON boolean and null values (keep as lowercase for valid JSON)
+            # Don't convert to Python style here - JSON parser expects lowercase
             function_args_cleaned = function_args_cleaned.replace(': True', ': true')
             function_args_cleaned = function_args_cleaned.replace(': False', ': false')
             function_args_cleaned = function_args_cleaned.replace(':True', ':true')
@@ -108,11 +114,15 @@ def query(
                 import re
                 cleaned_args = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', function_args)
                 
+                # Fix incomplete JSON values
+                cleaned_args = re.sub(r':\s*,', ': null,', cleaned_args)
+                cleaned_args = re.sub(r':\s*}', ': null}', cleaned_args)
+                
                 # Normalize Python-style literals to JSON-style
                 cleaned_args = re.sub(r'\bTrue\b', 'true', cleaned_args)
                 cleaned_args = re.sub(r'\bFalse\b', 'false', cleaned_args)
                 cleaned_args = re.sub(r'\bNone\b', 'null', cleaned_args)
-                
+
                 # Find the first { and last }
                 start = cleaned_args.find('{')
                 end = cleaned_args.rfind('}')
