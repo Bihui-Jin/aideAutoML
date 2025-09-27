@@ -80,6 +80,17 @@ def query(
             
             # Clean up the function arguments string
             function_args_cleaned = function_args.strip()
+
+            # Normalize Python-style booleans to JSON-style booleans
+            # This handles the case where LLM returns True/False instead of true/false
+            function_args_cleaned = function_args_cleaned.replace(': True', ': true')
+            function_args_cleaned = function_args_cleaned.replace(': False', ': false')
+            function_args_cleaned = function_args_cleaned.replace(':True', ':true')
+            function_args_cleaned = function_args_cleaned.replace(':False', ':false')
+
+            # Also handle None -> null
+            function_args_cleaned = function_args_cleaned.replace(': None', ': null')
+            function_args_cleaned = function_args_cleaned.replace(':None', ':null')
             
             # Try to parse the JSON
             output = json.loads(function_args_cleaned)
@@ -96,6 +107,11 @@ def query(
                 # Remove any potential control characters or invisible characters
                 import re
                 cleaned_args = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', function_args)
+                
+                # Normalize Python-style literals to JSON-style
+                cleaned_args = re.sub(r'\bTrue\b', 'true', cleaned_args)
+                cleaned_args = re.sub(r'\bFalse\b', 'false', cleaned_args)
+                cleaned_args = re.sub(r'\bNone\b', 'null', cleaned_args)
                 
                 # Find the first { and last }
                 start = cleaned_args.find('{')
