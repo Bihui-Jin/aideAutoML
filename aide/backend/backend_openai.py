@@ -74,12 +74,58 @@ def query(
             choice.message.tool_calls[0].function.name == func_spec.name
         ), "Function name mismatch"
         try:
-            output = json.loads(choice.message.tool_calls[0].function.arguments)
+
+            function_args = choice.message.tool_calls[0].function.arguments
+            logger.debug(f"Raw function arguments: {repr(function_args)}")
+            
+            # Clean up the function arguments string
+            function_args_cleaned = function_args.strip()
+            
+            # Try to parse the JSON
+            output = json.loads(function_args_cleaned)
         except json.JSONDecodeError as e:
             logger.error(
                 f"Error decoding the function arguments: {choice.message.tool_calls[0].function.arguments}"
             )
-            raise e
+            logger.error(f"JSON decode error: {e}")
+            logger.error(f"Error position: line {e.lineno}, column {e.colno}")
+            
+            # Try to extract partial JSON or provide a fallback
+            function_args = choice.message.tool_calls[0].function.arguments
+            try:
+                # Try to find the JSON object boundaries and extract it
+                start_idx = function_args.find('{')
+                if start_idx != -1:
+                    # Find the matching closing brace
+                    brace_count = 0
+                    end_idx = start_idx
+                    for i, char in enumerate(function_args[start_idx:], start_idx):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_idx = i + 1
+                                break
+                    
+                    if brace_count == 0:
+                        clean_json = function_args[start_idx:end_idx]
+                        logger.info(f"Attempting to parse extracted JSON: {clean_json}")
+                        output = json.loads(clean_json)
+                    else:
+                        raise e
+                else:
+                    raise e
+            except json.JSONDecodeError:
+                logger.error("Failed to extract valid JSON, falling back to error response")
+                # Provide a fallback response that matches the expected schema
+                output = {
+                    "is_bug": True,
+                    "has_csv_submission": False,
+                    "summary": f"JSON parsing error in function response: {str(e)}",
+                    "metric": None,
+                    "lower_is_better": True
+                }
 
     in_tokens = completion.usage.prompt_tokens
     out_tokens = completion.usage.completion_tokens
