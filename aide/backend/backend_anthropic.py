@@ -56,6 +56,8 @@ def query(
 
     max_retries = 2
     retries = 0
+    req_time = 0.0
+    message = None
     while retries < max_retries:
         try:
             t0 = time.time()
@@ -65,13 +67,13 @@ def query(
                 messages=messages,
                 **filtered_kwargs,
             )
+            req_time = time.time() - t0
             break
         except Exception as e:
             retries += 1
             if retries <= max_retries:
                 import time
                 time.sleep(61)
-    req_time = time.time() - t0
 
     assert len(message.content) == 1 and message.content[0].type == "text"
 
