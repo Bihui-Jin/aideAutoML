@@ -247,6 +247,39 @@ class Agent:
         }
         prompt["Instructions"] |= self._prompt_resp_fmt
         prompt["Instructions"] |= {
+#             "Symbolic Model Definition with Pyglove": [
+#                 "You MUST define the model as a **symbolic search space** using the `pyglove` library, not as a fixed architecture.",
+#                 "The model must be a **neural network built with TensorFlow/Keras layers**.",
+#                 "Import pyglove as `import pyglove as pg`.",
+#                 "Define the model architecture inside a class decorated with `@pg.symbolize`.",
+#                 "Use PyGlove primitives (`pg.oneof`, `pg.manyof`, `pg.floatv`, `pg.intv`) to expose architectural knobs.",
+#                 "Every symbolic choice MUST have a default value so the model is immediately runnable without search.",
+#                 "For vision tasks: define a CNN backbone where choices include number of convolutional blocks, channel widths, kernel sizes, activation functions, and whether to add squeeze-excite layers.",
+#                 "For sequence/NLP tasks: define a Transformer backbone where choices include number of layers, hidden size, number of attention heads, feed-forward expansion factor, and dropout rate.",
+#                 "The symbolic draft must instantiate a runnable default model when called (e.g., `model = SymbolicCNN()` or `model = SymbolicTransformer()`).",
+#                 "This draft model will later be modified by a NAS algorithm to explore the search space automatically.",
+#                 "Example of a symbolic CNN block using TensorFlow and PyGlove:",
+#                 """
+# @pg.symbolize
+# class ConvBlock(torch.nn.Module):
+#     def __init__(self, in_channels, out_channels):
+#         super().__init__()
+#         self.conv = torch.nn.Conv2d(
+#             in_channels,
+#             out_channels,
+#             kernel_size=pg.oneof([3, 5], default=3),
+#             padding=pg.oneof([1, 2], default=1)
+#         )
+#         self.activation = pg.oneof([
+#             torch.nn.ReLU(),
+#             torch.nn.GELU()
+#         ], default=torch.nn.ReLU())
+
+#     def forward(self, x):
+#         return self.activation(self.conv(x))
+#                 """,
+#                 "Ensure the model class can be instantiated and run forward without NAS tuning, but all symbolic knobs are available for future exploration."
+#             ],
             "Solution sketch guideline": [
                 "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
                 "Take the Memory section into consideration when proposing the design,"

@@ -36,7 +36,7 @@ def query(
 
     filtered_kwargs: dict = select_values(notnone, model_kwargs)  # type: ignore
     if "max_tokens" not in filtered_kwargs:
-        filtered_kwargs["max_tokens"] = 4096  # default for Claude models
+        filtered_kwargs["max_tokens"] = 16_384  # default for Claude models
 
     if func_spec is not None:
         raise NotImplementedError(
@@ -54,13 +54,23 @@ def query(
 
     messages = opt_messages_to_list(None, user_message)
 
-    t0 = time.time()
-    message = backoff_create(
-        _client.messages.create,
-        ANTHROPIC_TIMEOUT_EXCEPTIONS,
-        messages=messages,
-        **filtered_kwargs,
-    )
+    max_retries = 2
+    retries = 0
+    while retries < max_retries:
+        try:
+            t0 = time.time()
+            message = backoff_create(
+                _client.messages.create,
+                ANTHROPIC_TIMEOUT_EXCEPTIONS,
+                messages=messages,
+                **filtered_kwargs,
+            )
+            break
+        except Exception as e:
+            retries += 1
+            if retries <= max_retries:
+                import time
+                time.sleep(61)
     req_time = time.time() - t0
 
     assert len(message.content) == 1 and message.content[0].type == "text"
