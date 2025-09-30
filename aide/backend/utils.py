@@ -80,6 +80,15 @@ class FunctionSpec(DataClassJsonMixin):
             },
             "strict": True,
         }
+    
+    @property
+    def as_anthropic_tool_dict(self) -> dict:
+        """Convert function spec to Anthropic tool format."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.parameters,
+        }
 
     @property
     def openai_tool_choice_dict(self):
