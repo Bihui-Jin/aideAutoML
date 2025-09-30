@@ -22,12 +22,7 @@ ANTHROPIC_TIMEOUT_EXCEPTIONS = (
 @once
 def _setup_anthropic_client():
     global _client
-    import os
-    api_key = os.getenv('ANTHROPIC_API_KEY')
-    logger.info(f"ANTHROPIC_API_KEY found: {'Yes' if api_key else 'No'}")
-    if api_key:
-        logger.info(f"API key starts with: {api_key[:10]}...")
-    _client = anthropic.Anthropic(max_retries=0, api_key=api_key) 
+    _client = anthropic.Anthropic(max_retries=0) 
 
 def query(
     system_message: str | None,
@@ -42,10 +37,14 @@ def query(
     if "max_tokens" not in filtered_kwargs:
         filtered_kwargs["max_tokens"] = 16_384  # default for Claude models
 
+    # if func_spec is not None:
+    #     raise NotImplementedError(
+    #         "Anthropic does not support function calling for now."
+    #     )
     if func_spec is not None:
-        raise NotImplementedError(
-            "Anthropic does not support function calling for now."
-        )
+        filtered_kwargs["tools"] = [func_spec.as_anthropic_tool_dict]
+        # Force the model to use the tool
+        filtered_kwargs["tool_choice"] = {"type": "tool", "name": func_spec.name}
 
     # Anthropic doesn't allow not having a user messages
     # if we only have system msg -> use it as user msg
@@ -79,10 +78,38 @@ def query(
             logger.info(e)
             if retries <= max_retries:
                 time.sleep(61)
-
-    assert len(message.content) == 1 and message.content[0].type == "text"
-
-    output: str = message.content[0].text
+    
+    if func_spec is None:
+        assert len(message.content) == 1 and message.content[0].type == "text"
+        output: str = message.content[0].text
+    else:
+        logger.info(f"Function call response: {message.content}")
+        # Find the tool use block in the response
+        tool_use_block = None
+        for content in message.content:
+            if content.type in ["tool_use", "tool_call"]:
+                tool_use_block = content
+                break
+        
+        assert tool_use_block is not None, f"No tool_use block found in response: {message.content}"
+        assert tool_use_block.name == func_spec.name, f"Tool name mismatch: expected {func_spec.name}, got {tool_use_block.name}"
+        
+        try:
+            # tool_use_block.input is already a dict, no need to parse JSON
+            output = tool_use_block.input
+            logger.debug(f"Tool use input: {output}")
+        except Exception as e:
+            logger.error(f"Error processing tool use input: {tool_use_block.input}")
+            logger.error(f"Error: {str(e)}")
+            # Provide a fallback response that matches the expected schema
+            output = {
+                "is_bug": True,
+                "has_csv_submission": False,
+                "summary": f"Error processing tool response: {str(e)}",
+                "metric": None,
+                "lower_is_better": True
+            }
+    # output: str = message.content[0].text
     in_tokens = message.usage.input_tokens
     out_tokens = message.usage.output_tokens
 
