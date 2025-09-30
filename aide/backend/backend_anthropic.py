@@ -22,12 +22,7 @@ ANTHROPIC_TIMEOUT_EXCEPTIONS = (
 @once
 def _setup_anthropic_client():
     global _client
-    import os
-    api_key = os.getenv('ANTHROPIC_API_KEY')
-    logger.info(f"ANTHROPIC_API_KEY found: {'Yes' if api_key else 'No'}")
-    if api_key:
-        logger.info(f"API key starts with: {api_key[:10]}...")
-    _client = anthropic.Anthropic(max_retries=0, api_key=api_key) 
+    _client = anthropic.Anthropic(max_retries=0) 
 
 def query(
     system_message: str | None,
