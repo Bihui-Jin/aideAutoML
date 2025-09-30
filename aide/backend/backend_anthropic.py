@@ -67,10 +67,12 @@ def query(
                 messages=messages,
                 **filtered_kwargs,
             )
+            logger.info(f"Anthropic API call successful: {message.content[0].text}")
             req_time = time.time() - t0
             break
         except Exception as e:
             retries += 1
+            logger.info(e)
             if retries <= max_retries:
                 import time
                 time.sleep(61)
