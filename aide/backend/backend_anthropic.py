@@ -1,5 +1,6 @@
 """Backend for Anthropic API."""
 
+import json
 import time
 import logging
 
@@ -11,6 +12,9 @@ logger = logging.getLogger("aide")
 
 _client: anthropic.Anthropic = None  # type: ignore
 
+with open("/home/b27jin/config.json", mode="r") as f:
+    config_dict = json.load(f)
+
 ANTHROPIC_TIMEOUT_EXCEPTIONS = (
     anthropic.RateLimitError,
     anthropic.APIConnectionError,
@@ -18,12 +22,10 @@ ANTHROPIC_TIMEOUT_EXCEPTIONS = (
     anthropic.InternalServerError,
 )
 
-
 @once
 def _setup_anthropic_client():
     global _client
-    _client = anthropic.Anthropic(max_retries=0)
-
+    _client = anthropic.Anthropic(max_retries=0, api_key=config_dict['anthropic'])
 
 def query(
     system_message: str | None,
@@ -74,7 +76,6 @@ def query(
             retries += 1
             logger.info(e)
             if retries <= max_retries:
-                import time
                 time.sleep(61)
 
     assert len(message.content) == 1 and message.content[0].type == "text"
