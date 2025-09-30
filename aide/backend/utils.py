@@ -87,7 +87,7 @@ class FunctionSpec(DataClassJsonMixin):
         return {
             "name": self.name,
             "description": self.description,
-            "input_schema": self.parameters,
+            "input_schema": self.json_schema,
         }
 
     @property
