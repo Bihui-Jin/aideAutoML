@@ -12,9 +12,6 @@ logger = logging.getLogger("aide")
 
 _client: anthropic.Anthropic = None  # type: ignore
 
-with open("/home/b27jin/config.json", mode="r") as f:
-    config_dict = json.load(f)
-
 ANTHROPIC_TIMEOUT_EXCEPTIONS = (
     anthropic.RateLimitError,
     anthropic.APIConnectionError,
@@ -25,7 +22,12 @@ ANTHROPIC_TIMEOUT_EXCEPTIONS = (
 @once
 def _setup_anthropic_client():
     global _client
-    _client = anthropic.Anthropic(max_retries=0, api_key=config_dict['anthropic'])
+    import os
+    api_key = os.getenv('ANTHROPIC_API_KEY')
+    logger.info(f"ANTHROPIC_API_KEY found: {'Yes' if api_key else 'No'}")
+    if api_key:
+        logger.info(f"API key starts with: {api_key[:10]}...")
+    _client = anthropic.Anthropic(max_retries=0, api_key=api_key) 
 
 def query(
     system_message: str | None,
