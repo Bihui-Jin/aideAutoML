@@ -42,10 +42,10 @@ def query(
     #         "Anthropic does not support function calling for now."
     #     )
     if func_spec is not None:
-        logger.info(f"Using function spec: {func_spec}")
-        logger.info(f"Using function spec: {func_spec.as_anthropic_tool_dict}")
-        logger.info(f"Function spec schema: {json.dumps(func_spec.json_schema, indent=2)}")
-        logger.info(f"Function tool name: {func_spec.name}")
+        # logger.info(f"Using function spec: {func_spec}")
+        # logger.info(f"Using function spec: {func_spec.as_anthropic_tool_dict}")
+        # logger.info(f"Function spec schema: {json.dumps(func_spec.json_schema, indent=2)}")
+        # logger.info(f"Function tool name: {func_spec.name}")
         
         filtered_kwargs["tools"] = [func_spec.as_anthropic_tool_dict]
         # Force the model to use the tool
@@ -75,7 +75,7 @@ def query(
                 messages=messages,
                 **filtered_kwargs,
             )
-            logger.info(f"Anthropic API call successful: {message.content[0].text}")
+            # logger.info(f"Anthropic API call successful: {message.content[0].text}")
             req_time = time.time() - t0
             break
         except Exception as e:
