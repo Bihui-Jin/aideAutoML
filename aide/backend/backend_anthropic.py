@@ -88,11 +88,11 @@ def query(
         assert len(message.content) == 1 and message.content[0].type == "text"
         output: str = message.content[0].text
     else:
-        logger.info(f"Function call response: {message.content}")
+        # logger.info(f"Function call response: {message.content}")
         # Find the tool use block in the response
         tool_use_block = None
         for content in message.content:
-            if content.type in ["tool_use", "tool_call"]:
+            if content.type == "tool_use":
                 tool_use_block = content
                 break
         
