@@ -213,6 +213,8 @@ class Agent:
         # if self.acfg.code.model == "qwen3-max":
         #     query_kwargs["base_url"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
+        logger.info(f"Model {query_kwargs['model']} is used for {qType}")
+
         for _ in range(retries):
             completion_text = query(**query_kwargs)
 
@@ -296,7 +298,7 @@ class Agent:
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
 
-        plan, code = self.plan_and_code_query(prompt)
+        plan, code = self.plan_and_code_query(prompt, qType="_draft")
         new_node = Node(plan=plan, code=code)
         logger.info(f"Drafted new node {new_node.id}")
         return new_node
@@ -338,7 +340,7 @@ class Agent:
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
 
-        plan, code = self.plan_and_code_query(prompt)
+        plan, code = self.plan_and_code_query(prompt, qType="_improve")
         new_node = Node(plan=plan, code=code, parent=parent_node)
         logger.info(f"Improved node {parent_node.id} to create new node {new_node.id}")
         return new_node
