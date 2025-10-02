@@ -50,6 +50,7 @@ class AgentConfig:
 
     code: StageConfig
     feedback: StageConfig
+    debug: StageConfig
 
     search: SearchConfig
 
