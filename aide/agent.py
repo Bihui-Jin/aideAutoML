@@ -196,18 +196,18 @@ class Agent:
             )
         }
 
-    def plan_and_code_query(self, prompt, retries=3) -> tuple[str, str]:
+    def plan_and_code_query(self, prompt, retries=3, qType=None) -> tuple[str, str]:
         """Generate a natural language plan + code in the same LLM call and split them apart."""
         completion_text = None
 
         query_kwargs = {
             "system_message": prompt,
             "user_message": None,
-            "model": self.acfg.code.model,
+            "model": self.acfg.code.model if qType != "_debug" else self.acfg.debug.model,
             "convert_system_to_user": self.acfg.convert_system_to_user,
         }
 
-        if self.acfg.code.model != "gpt-5":
+        if query_kwargs["model"] != "gpt-5":
             query_kwargs["temperature"] = self.acfg.code.temp
 
         # if self.acfg.code.model == "qwen3-max":
@@ -378,7 +378,7 @@ class Agent:
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
 
-        plan, code = self.plan_and_code_query(prompt)
+        plan, code = self.plan_and_code_query(prompt, qType="_debug")
         new_node = Node(plan=plan, code=code, parent=parent_node)
         logger.info(f"Debugged node {parent_node.id} to create new node {new_node.id}")
         return new_node
