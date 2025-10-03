@@ -349,7 +349,7 @@ class Agent:
         introduction = (
             "You are a Kaggle grandmaster attending a competition. "
             "Your previous solution had a bug and/or did not produce a submission.csv, "
-            "so based on the information below, you should revise it in order to fix this. "
+            "so based on the information below, you should revise it in order to fix this without introducing new bugs and changing the overall search space. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
         )
@@ -457,8 +457,8 @@ class Agent:
             # Determine what action to take based on current solution state
             if parent_node.is_buggy:
                 result_node = self._debug(parent_node)
-            else:
-                result_node = self._improve(parent_node)
+            # else:
+            #     result_node = self._improve(parent_node)
 
             result_node = self.parse_exec_result(
                 node=result_node,
