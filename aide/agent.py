@@ -350,6 +350,7 @@ class Agent:
             "You are a Kaggle grandmaster attending a competition. "
             "Your previous solution had a bug and/or did not produce a submission.csv, "
             "so based on the information below, you should revise it in order to fix this without introducing new bugs and changing the overall search space. "
+            "Your response should not change the code architecture in `pyglove` format and use `pyglove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
         )
