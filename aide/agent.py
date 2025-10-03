@@ -251,7 +251,7 @@ class Agent:
         prompt["Instructions"] |= {
 #             "Symbolic Model Definition with Pyglove": [
 #                 "You MUST define the model as a **symbolic search space** using the `pyglove` library, not as a fixed architecture.",
-#                 "The model must be a **neural network built with TensorFlow/Keras layers**.",
+#                 "The model must be a **neural network built with Torch layers**.",
 #                 "Import pyglove as `import pyglove as pg`.",
 #                 "Define the model architecture inside a class decorated with `@pg.symbolize`.",
 #                 "Use PyGlove primitives (`pg.oneof`, `pg.manyof`, `pg.floatv`, `pg.intv`) to expose architectural knobs.",
@@ -260,7 +260,7 @@ class Agent:
 #                 "For sequence/NLP tasks: define a Transformer backbone where choices include number of layers, hidden size, number of attention heads, feed-forward expansion factor, and dropout rate.",
 #                 "The symbolic draft must instantiate a runnable default model when called (e.g., `model = SymbolicCNN()` or `model = SymbolicTransformer()`).",
 #                 "This draft model will later be modified by a NAS algorithm to explore the search space automatically.",
-#                 "Example of a symbolic CNN block using TensorFlow and PyGlove:",
+#                 "Example of a symbolic CNN block using Torch and PyGlove:",
 #                 """
 # @pg.symbolize
 # class ConvBlock(torch.nn.Module):
