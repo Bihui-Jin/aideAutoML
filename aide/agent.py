@@ -1,3 +1,4 @@
+from pathlib import Path
 import shutil
 import logging
 import random
@@ -411,7 +412,7 @@ class Agent:
             if self.current_solution is None:
                 code = extract_code(self.initial_code)
                 nl_text = extract_text_up_to_code(self.initial_code)
-                logger.info("Using provided initial code for the first step:\nCode:{code}\nPlan:{nl_text}".format(code=code, nl_text=nl_text))
+                logger.info("Using provided initial code for the first step:\nPlan:{nl_text}\nCode:{code}".format(code=code, nl_text=nl_text))
                 # Create initial node from provided code
                 initial_node = Node(plan=nl_text, code=code)
                 # Execute and evaluate the initial code immediately
@@ -608,8 +609,9 @@ class Agent:
 
         # do an extra check, to catch cases where judge fails
         has_csv_submission = (
-            self.cfg.workspace_dir / "submission" / "submission.csv"
-        ).exists()
+            (self.cfg.workspace_dir / "submission" / "submission.csv").exists() or
+            (Path(".") / "submission" / "submission.csv").exists()
+        )
 
         node.analysis = response["summary"]
         node.is_buggy = (
