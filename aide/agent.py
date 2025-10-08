@@ -612,16 +612,21 @@ class Agent:
             (self.cfg.workspace_dir / "submission" / "submission.csv").exists() or
             (Path(".") / "submission" / "submission.csv").exists()
         )
-
-        logger.info(f"Has CSV submission: {has_csv_submission}")
-        logger.info(f"response is_bug: {response['is_bug']}")
-        logger.info(f"response metric: {response['metric']}")
-        logger.info(f"response has_csv_submission: {response['has_csv_submission']}")
-        logger.info(f"script exec_result: {exec_result}")
         
+        has_traceback = any(
+            "Traceback (most recent call last):" in line
+            for line in exec_result.term_out
+        )
+
+        # logger.info(f"Has CSV submission: {has_csv_submission}")
+        # logger.info(f"response is_bug: {response['is_bug']}")
+        # logger.info(f"response metric: {response['metric']}")
+        # logger.info(f"response has_csv_submission: {response['has_csv_submission']}")
+        # logger.info(f"script exec_result: {exec_result}")
+
         node.analysis = response["summary"]
         node.is_buggy = (
-            response["is_bug"]
+            (response["is_bug"] and has_traceback)
             or node.exc_type is not None
             or response["metric"] is None
             or response["has_csv_submission"] == False
