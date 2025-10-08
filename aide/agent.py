@@ -613,6 +613,8 @@ class Agent:
             (Path(".") / "submission" / "submission.csv").exists()
         )
 
+        logger.info(f"Has CSV submission: {has_csv_submission}")
+
         node.analysis = response["summary"]
         node.is_buggy = (
             response["is_bug"]
