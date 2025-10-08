@@ -614,6 +614,9 @@ class Agent:
         )
 
         logger.info(f"Has CSV submission: {has_csv_submission}")
+        logger.info(f"response is_bug: {response['is_bug']}")
+        logger.info(f"response metric: {response['metric']}")
+        logger.info(f"response has_csv_submission: {response['has_csv_submission']}")
 
         node.analysis = response["summary"]
         node.is_buggy = (
