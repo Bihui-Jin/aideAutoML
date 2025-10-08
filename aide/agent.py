@@ -617,7 +617,8 @@ class Agent:
         logger.info(f"response is_bug: {response['is_bug']}")
         logger.info(f"response metric: {response['metric']}")
         logger.info(f"response has_csv_submission: {response['has_csv_submission']}")
-
+        logger.info(f"script exec_result: {exec_result}")
+        
         node.analysis = response["summary"]
         node.is_buggy = (
             response["is_bug"]
