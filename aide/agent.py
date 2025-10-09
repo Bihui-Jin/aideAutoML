@@ -249,8 +249,12 @@ class Agent:
             "Instructions": {},
         }
         prompt["Instructions"] |= self._prompt_resp_fmt
+        with open("home/templates/draft_prompt.txt", "r") as f:
+            draft_template = f.read()
+        with open("home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
         prompt["Instructions"] |= {
-#             "Symbolic Model Definition with Pyglove": [
+            "Symbolic Model Definition with Pyglove": draft_template,
 #                 "You MUST define the model as a **symbolic search space** using the `pyglove` library, not as a fixed architecture.",
 #                 "The model must be a **neural network built with Torch layers**.",
 #                 "Import pyglove as `import pyglove as pg`.",
@@ -284,7 +288,7 @@ class Agent:
 #                 "Ensure the model class can be instantiated and run forward without NAS tuning, but all symbolic knobs are available for future exploration."
 #             ],
             "Solution sketch guideline": [
-                "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
+                # "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
                 "Take the Memory section into consideration when proposing the design,"
                 " don't propose the same modelling solution but keep the evaluation the same.",
                 "The solution sketch should be 3-5 sentences.",
@@ -298,6 +302,12 @@ class Agent:
 
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
+
+        prompt["Python Code Template"] |= f"""
+```
+{draft_code_template}
+```
+"""
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
         new_node = Node(plan=plan, code=code)

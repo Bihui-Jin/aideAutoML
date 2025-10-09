@@ -1,0 +1,62 @@
+Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures, optimizer/training strategies, and (4) train/evaluate and save a valid submission.
+
+########### ABSOLUTE REQUIREMENTS ###########
+- Use **PyTorch** for all neural nets; run on GPU if available (`DEVICE` is already set).
+- Use **PyGlove** to define search spaces: use `pg.oneof`, `pg.floatv`, `pg.intv`, `pg.manyof` for all tunable knobs.
+  - Do NOT pass a `default` argument to `pg.oneof` (not supported).
+  - Every symbolic choice must have concrete candidate values so the script runs immediately.
+- Keep the provided class/method signatures and the outer NAS loop/timeout helper **unchanged**.
+- Decorate `Experiment` with `@pg.symbolize` and fill:
+  - `__init__`: declare all symbolic knobs for data processing, model, optimizer, and training.
+  - `data_processing(...)`: implement a **competition-aware** pipeline according to the task type; use the only task related features; expose an **data processing search space**.
+  - `model(...)`: return a **Torch** model; expose an **architecture search space** appropriate to the inferred task.
+  - `_optimizer(...)`: return an optimizer from a **symbolic choice** space.
+  - `training(...)`: implement a training loop (optionally with early stopping knobs in the search space).
+  - `evaluation(...)`: compute and return the **competition metric** (e.g., ROC-AUC for RAOP); higher-is-better.
+  - `run(...)`: build features, split train/val, train, compute `score`, train on full data, produce test predictions, and `return (score, test_probs)`.
+- `feedabce(0.0)` is used to give a bad score; the score can be lower the better or higher the better depending on the competition description, **replace 0.0 accordingly**.
+- Save a valid **submission** at `submission/submission.csv`. Use the correct columns/format infered from the instruction.
+
+########### COMPETITION-AWARE IMPLEMENTATION ###########
+1) **Data Processing Search Space (data_processing)**
+   - For TEXT tasks (e.g., RAOP):
+     - Consider symbolic knobs but not limited to: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word'])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
+   - For TABULAR tasks:
+     - Consider symbolic knobs but not limited to: Imputation knob (`'zero','median'`), scaler knob (`'standard','robust','none'`).
+   - For IMAGE CLASSIFICATION (only if description/data clearly indicate images):
+     - Consider symbolic knobs but not limited to: simple torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
+   - Return both features `(X_all, X_test)` (and any IDs if needed inside `run()`), but keep method signature as in the template.
+
+2) **Model Architecture Search Space (model)**
+   - TEXT/TABULAR:
+     - Provide multiple **Torch MLP**-family blueprints exposed via `pg.oneof([...])`, such as:
+       - `'logreg'`: single linear head
+       - `'mlp'`: (layers ∈ {1,2,3}, hidden ∈ {128,256,384/512}, activation ∈ {ReLU,GELU}, dropout ∈ {0.0,0.1,0.2,0.3}, optional BatchNorm)
+       - `'res_mlp'` or `'wide_deep'` variants
+       - others
+     - Output layer size = 1 for binary (sigmoid in eval), K for multiclass (softmax in eval).
+   - IMAGE CLASSIFICATION:
+     - Small CNN or torchvision backbone choice (e.g., resnet18 vs resnet34) with head replacement; keep epochs tiny.
+   - Ensure the returned model is moved to `DEVICE`.
+
+3) **Optimizer & Training Search Space**
+   - `_optimizer`: Consider symbolic knobs but not limited to: `pg.oneof(['adam','adamw','sgd'])` with LR choices `{3e-4,5e-4,1e-3}`, optional weight_decay, optional momentum for SGD.
+   - `training`: implement a mini training loop over `epochs` (e.g., {4,5}) with `batch_size` choices (e.g., {128,256}), criterion choice could be:
+     - Binary classification: `BCEWithLogitsLoss`.
+     - Multiclass: `CrossEntropyLoss`.
+     - Regression: `MSELoss` (report negative RMSE as score for “higher-is-better” convention).
+   - Optional early stopping knobs: `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0,1e-4}}`. If enabled, monitor validation metric and restore best weights.
+
+4) **run()**
+   - Build features.
+   - Stratified (if classification) hold-out split (`valid_size=0.2`) for quick feedback.
+   - Train and compute validation metric.
+   - Refit on full train with same hyperparams (you can skip early stop here for speed).
+   - Predict test set probabilities.
+   - Return `(score, test_probs)`.
+
+
+Now, FILL IN THE TEMPLATE:
+- Declare all PyGlove knobs in `__init__`.
+- Implement `data_processing`, `model`, `_optimizer`, `training`, `evaluation`, `run` exactly as specified above.
+- Ensure `run()` returns `(score, test_probs)` and that the code runs end-to-end without modification.
