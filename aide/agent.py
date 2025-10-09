@@ -521,10 +521,10 @@ class Agent:
 
             if parent_node is None:
                 result_node = self._draft()
-            elif parent_node.is_buggy:
-                result_node = self._debug(parent_node)
-            else:
-                result_node = self._improve(parent_node)
+            # elif parent_node.is_buggy:
+            #     result_node = self._debug(parent_node)
+            # else:
+            #     result_node = self._improve(parent_node)
 
             result_node = self.parse_exec_result(
                 node=result_node,
