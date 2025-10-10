@@ -303,7 +303,7 @@ class Agent:
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
 
-        prompt["Python Code Template"] |= f"""
+        prompt["Python Code Template"] = f"""
 ```
 {draft_code_template}
 ```
