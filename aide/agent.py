@@ -249,9 +249,9 @@ class Agent:
             "Instructions": {},
         }
         prompt["Instructions"] |= self._prompt_resp_fmt
-        with open("home/templates/draft_prompt.txt", "r") as f:
+        with open("/home/templates/draft_prompt.txt", "r") as f:
             draft_template = f.read()
-        with open("home/templates/draft_code_template.py", "r") as f:
+        with open("/home/templates/draft_code_template.py", "r") as f:
             draft_code_template = f.read()
         prompt["Instructions"] |= {
             "Symbolic Model Definition with Pyglove": draft_template,
