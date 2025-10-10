@@ -6,7 +6,7 @@ import threading
 import pyglove as pg
 
 # ----------------------------
-# Repro, Device, Utilities
+# Repro, Device, Utilities (kept from the template)
 # ----------------------------
 def set_seed(seed=42):
     random.seed(seed)
@@ -102,7 +102,7 @@ class Experiment:
     # 5) Evaluation
     # ------------------------
     def evaluation(self, ):
-
+        # Do not add print/logging here to avoid overhead during NAS
         # Implementing the evaluation metric for such task type from the competition description
         return 
 
@@ -110,6 +110,7 @@ class Experiment:
     # 6) Run end-to-end: builds features, trains, evaluates, and writes submission.
     # ------------------------
     def run(self):
+        # Do not add print/logging to avoid overhead during NAS
         # Build dense features from the symbolic data-processing pipeline
         
 
@@ -129,22 +130,25 @@ class Experiment:
         return 
 
 # ----------------------------
-# Instantiate a compact search space
+# Instantiate a compact search space (kept from the template)
+# Do NOT modify below this line until the "Finished" line
 # ----------------------------
 exp_template = Experiment()
 
 best_score, best_exp = -1.0, None
 best_test_probs = None
 _timeout = 30
-i = 1
+trial, upper_bound = 1, 1
 
 
 for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
-    print(f"\n=== Trial {i}===")
-
-    # Limit to 50 trials
-    if i > 50: 
+    # Limit to 50 trial
+    if trial > 50: 
         break 
+    # Limit the upper bound of total trial to avoid infinite loop
+    if upper_bound > 100:
+        break
+    upper_bound += 1
 
     try:
         result = run_with_timeout(exp.run, timeout_sec=_timeout)
@@ -156,8 +160,9 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
 
         success, (score, test_probs) = result
         feedback(score)
+        print(f"\n=== Trial {trial}===")
         print(f"Validation score: {score:.6f}")
-        print(f"Architecture: {exp.arch}")
+        print(f"Architecture: {exp}")
 
         # Track best
         if score > best_score:
@@ -165,7 +170,7 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
             best_test_probs = test_probs
             best_exp = exp
         
-        i += 1
+        trial += 1
     except Exception as e:
         # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
         feedback(0.0)  
@@ -175,7 +180,15 @@ print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")
 print(f"Best Architecture: {best_exp}")
 
+# ----------------------------
+# Finished
+# Do not modify above this line
+# ----------------------------
+
+# ----------------------------
 # Ensure best submission is saved
+# Fill submission in according to the competition's submission format
+# ----------------------------
 os.makedirs("./submission", exist_ok=True)
 if best_test_probs is not None:
     submission = pd.DataFrame(

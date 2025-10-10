@@ -310,6 +310,7 @@ class Agent:
 """
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
+        logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
         logger.info(f"Drafted new node {new_node.id}")
         return new_node

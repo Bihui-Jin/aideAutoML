@@ -2,13 +2,13 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 
 ########### ABSOLUTE REQUIREMENTS ###########
 - Use **PyTorch** for all neural nets; run on GPU if available (`DEVICE` is already set).
-- Use **PyGlove** to define search spaces: use `pg.oneof`, `pg.floatv`, `pg.intv`, `pg.manyof` for all tunable knobs.
+- Use **PyGlove** to define search spaces: use `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates) for all tunable knobs.
   - Do NOT pass a `default` argument to `pg.oneof` (not supported).
   - Every symbolic choice must have concrete candidate values so the script runs immediately.
 - Keep the provided class/method signatures and the outer NAS loop/timeout helper **unchanged**.
 - Decorate `Experiment` with `@pg.symbolize` and fill:
   - `__init__`: declare all symbolic knobs for data processing, model, optimizer, and training.
-  - `data_processing(...)`: implement a **competition-aware** pipeline according to the task type; use the only task related features; expose an **data processing search space**.
+  - `data_processing(...)`: implement a **competition-aware** pipeline according to the task type; use the only task related features; start with a fast iteration with a small sample of the training set (target to 30 seconds); expose an **data processing search space**.
   - `model(...)`: return a **Torch** model; expose an **architecture search space** appropriate to the inferred task.
   - `_optimizer(...)`: return an optimizer from a **symbolic choice** space.
   - `training(...)`: implement a training loop (optionally with early stopping knobs in the search space).
@@ -16,6 +16,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
   - `run(...)`: build features, split train/val, train, compute `score`, train on full data, produce test predictions, and `return (score, test_probs)`.
 - `feedabce(0.0)` is used to give a bad score; the score can be lower the better or higher the better depending on the competition description, **replace 0.0 accordingly**.
 - Save a valid **submission** at `submission/submission.csv`. Use the correct columns/format infered from the instruction.
+- Do NOT use print/logging while filling in code.
 
 ########### COMPETITION-AWARE IMPLEMENTATION ###########
 1) **Data Processing Search Space (data_processing)**
@@ -40,7 +41,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
    - Ensure the returned model is moved to `DEVICE`.
 
 3) **Optimizer & Training Search Space**
-   - `_optimizer`: Consider symbolic knobs but not limited to: `pg.oneof(['adam','adamw','sgd'])` with LR choices `{3e-4,5e-4,1e-3}`, optional weight_decay, optional momentum for SGD.
+   - `_optimizer`: Consider symbolic knobs but not limited to: `pg.oneof(['adam','adamw','sgd'])` and other optimizers with LR choices `{3e-4,5e-4,1e-3}`, optional weight_decay, optional momentum for SGD.
    - `training`: implement a mini training loop over `epochs` (e.g., {4,5}) with `batch_size` choices (e.g., {128,256}), criterion choice could be:
      - Binary classification: `BCEWithLogitsLoss`.
      - Multiclass: `CrossEntropyLoss`.
