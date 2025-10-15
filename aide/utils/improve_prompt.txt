@@ -1,0 +1,47 @@
+Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by **analyzing prior trials** and **refining the search space** to focus on what still matters. Then **fill in the given Python Code Template** (unchanged structure/signatures) with the refined PyGlove search space and Torch implementation to further boost prediction performance.
+
+########### STRICT RULES ###########
+- Do NOT change class/method names, signatures, or the outer NAS loop/timeout helper.
+- Do NOT add any new print/logging statements anywhere (including during CSV saving).
+- Use **PyTorch** for all neural networks and run on GPU if available (`DEVICE` is already set).
+- Use **PyGlove** for all search knobs. Do **NOT** pass `default` to `pg.oneof`. Every knob must be executable immediately (i.e., concrete candidate values).
+- Script must complete within ~30 minutes on a single GPU.
+
+########### INPUTS YOU CAN RELY ON ###########
+- The **Task description**.
+- The **previously developed solution** (search space and code skeleton).
+- A list of **Model performance** for many trials: for each trial, the chosen **Tested parameters settings** (architecture + hyperparameters) and its **metric** (Validation score).
+- **Is the higher the better**: True, if the metric is the higher the better; Otherwise, False.
+- The **Python Code Template** (provided separately and must remain structurally intact).
+
+########### OBJECTIVES ###########
+1) **Analyze "Model performance" (all trials)** to decide which parameters should be **finalized** (no longer searched).
+   - Only use what you can infer from the trial table: parameter from performance associations across trials.
+   - Identify parameters (architecture types and hyperparameters) that consistently yield top scores or have negligible impact on performance.
+   - For these **finalized parameters**, lock them by using a **literal fixed value** in the Experiment constructor.
+   - Examples: if `activation='gelu'` dominates, fix `activation='gelu'`. If `arch='wide_deep'` is consistently best, fix that and drop the others.
+
+2) **Analyze "Model performance" (all trials)** to decide which parameters are still **determining** (impactful/uncertain) and should **remain in the search space**.
+   - Keep only the **promising candidates** for those knobs, pruning poor performers.
+   - Narrow continuous ranges (if used via `pg.floatv`) to tighter, performance-informed bounds.
+   - Examples: if `mlp_hidden` best values were {256, 384}, you would keep those; if `lr` good range was around `5e-4`, restrict to `{3e-4, 5e-4, 7e-4}`.
+
+3) **Increase the training sample size a bit** while respecting runtime.
+   - Reduce holdout size subtly (e.g., `valid_size` from `0.2` to `0.15` or `0.10`) to train on more data.
+   - Increase the sample size of the training set by 30% from the previously developed solution. If the previously developed solution used all already, do nothing.
+   - Keep epochs modest to fit time budget.
+
+4) **Fill in the "Python Code Template"** using the refined search space:
+   - **Data processing (competition-aware)**: Based on **Task description** and the actual train/test schema, implement feature engineering appropriate to the task (e.g., for RAOP-like text: TF-IDF/Hashing + optional SVD + numeric side channels + scaling). Use PyGlove knobs for the **remaining determining** preprocessing choices; fix finalized ones from step 1.
+   - In `__init__`, define **both finalized and determining** knobs:
+      - Finalized knobs: fixed literals.
+      - Determining knobs: pruned candidate lists (or narrowed `pg.floatv` / `pg.oneof`).
+   - **Model (architecture search space)**: Provide PyTorch models that match the inferred task type (binary text classification, multiclass, regression, etc.). Keep only determining architecture choices; fix the rest per step 1. Ensure output dimensions match the task (1 for binary/logits, K for multiclass).
+   - **Optimizer/Training search space**: Keep determining choices (e.g., optimizer type, LR, weight decay, batch size, epochs) and fix other training knobs if your analysis supports it.
+   - **Evaluation**: Implement the correct competition metric. 
+   - **Run**: Build features, do a stratified holdout split (smaller `valid_size`), train, compute validation score, refit on all data, predict test probabilities, and `return (score, test_probs)`.
+
+Now, FILL IN THE TEMPLATE WITH:
+- Finalized parameters (fixed),
+- Determining parameters (still searched, pruned/tightened),
+- Slightly increased training sample size via a smaller validation split.

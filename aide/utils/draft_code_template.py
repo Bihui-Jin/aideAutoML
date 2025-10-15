@@ -140,7 +140,7 @@ best_test_probs = None
 _timeout = 30
 trial, upper_bound = 1, 1
 
-
+print("Model performance")
 for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
     # Limit to 50 trial
     if trial > 50: 
@@ -162,7 +162,7 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
         feedback(score)
         print(f"\n=== Trial {trial}===")
         print(f"Validation score: {score:.6f}")
-        print(f"Architecture: {exp}")
+        print(f"Tested parameters: {exp}")
 
         # Track best
         if score > best_score:
@@ -178,7 +178,7 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
 
 print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")
-print(f"Best Architecture: {best_exp}")
+print(f"Best Parameters: {best_exp}")
 
 # ----------------------------
 # Finished
@@ -196,3 +196,4 @@ if best_test_probs is not None:
         { }
     )
     submission.to_csv("submission/submission.csv", index=False)
+# Do not add new print/logging functions

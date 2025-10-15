@@ -20,7 +20,6 @@ from .utils.response import extract_code, extract_text_up_to_code, wrap_code
 
 logger = logging.getLogger("aide")
 
-
 def format_time(time_in_sec: int):
     return f"{time_in_sec // 3600}hrs {(time_in_sec % 3600) // 60}mins {time_in_sec % 60}secs"
 
@@ -144,6 +143,7 @@ class Agent:
             "torch-geometric",
             "bayesian-optimization",
             "timm",
+            "pyglove",
         ]
         random.shuffle(pkgs)
         pkg_str = ", ".join([f"`{p}`" for p in pkgs])
@@ -162,9 +162,9 @@ class Agent:
         impl_guideline = [
             f"<TOTAL_TIME_REMAINING: {format_time(tot_time_remaining)}>",
             f"<TOTAL_STEPS_REMAINING: {self.acfg.steps - self.current_step}>",
-            "The code should **implement the proposed solution**, **print the value of the evaluation metric computed on a hold-out validation set**,",
+            "The code should **implement the proposed solution** ",
             "**AND MOST IMPORTANTLY SAVE PREDICTIONS ON THE PROVIDED UNLABELED TEST DATA IN A `submission.csv` FILE IN THE ./submission/ DIRECTORY.**",
-            "The code should be a single-file python program that is self-contained and can be executed as-is.",
+            "The code should be a single-file python program in PyGlove format that is self-contained and can be executed as-is.",
             "No parts of the code should be skipped, don't terminate the before finishing the script.",
             "Your response should only contain a single code block.",
             f"Be aware of the running time of the code, it should complete within {humanize.naturaldelta(exec_timeout)}.",
@@ -255,38 +255,6 @@ class Agent:
             draft_code_template = f.read()
         prompt["Instructions"] |= {
             "Symbolic Model Definition with Pyglove": draft_template,
-#                 "You MUST define the model as a **symbolic search space** using the `pyglove` library, not as a fixed architecture.",
-#                 "The model must be a **neural network built with Torch layers**.",
-#                 "Import pyglove as `import pyglove as pg`.",
-#                 "Define the model architecture inside a class decorated with `@pg.symbolize`.",
-#                 "Use PyGlove primitives (`pg.oneof`, `pg.manyof`, `pg.floatv`, `pg.intv`) to expose architectural knobs.",
-#                 "Every symbolic choice MUST have a default value so the model is immediately runnable without search.",
-#                 "For vision tasks: define a CNN backbone where choices include number of convolutional blocks, channel widths, kernel sizes, activation functions, and whether to add squeeze-excite layers.",
-#                 "For sequence/NLP tasks: define a Transformer backbone where choices include number of layers, hidden size, number of attention heads, feed-forward expansion factor, and dropout rate.",
-#                 "The symbolic draft must instantiate a runnable default model when called (e.g., `model = SymbolicCNN()` or `model = SymbolicTransformer()`).",
-#                 "This draft model will later be modified by a NAS algorithm to explore the search space automatically.",
-#                 "Example of a symbolic CNN block using Torch and PyGlove:",
-#                 """
-# @pg.symbolize
-# class ConvBlock(torch.nn.Module):
-#     def __init__(self, in_channels, out_channels):
-#         super().__init__()
-#         self.conv = torch.nn.Conv2d(
-#             in_channels,
-#             out_channels,
-#             kernel_size=pg.oneof([3, 5], default=3),
-#             padding=pg.oneof([1, 2], default=1)
-#         )
-#         self.activation = pg.oneof([
-#             torch.nn.ReLU(),
-#             torch.nn.GELU()
-#         ], default=torch.nn.ReLU())
-
-#     def forward(self, x):
-#         return self.activation(self.conv(x))
-#                 """,
-#                 "Ensure the model class can be instantiated and run forward without NAS tuning, but all symbolic knobs are available for future exploration."
-#             ],
             "Solution sketch guideline": [
                 # "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
                 "Take the Memory section into consideration when proposing the design,"
@@ -340,8 +308,10 @@ class Agent:
         }
 
         prompt["Instructions"] |= self._prompt_resp_fmt
+        with open("/home/templates/improve_prompt.txt", "r") as f:
+            improve_prompt = f.read()
         prompt["Instructions"] |= {
-            "Solution improvement sketch guideline": [
+            "Solution requirments": [
                 "The solution sketch should be a brief natural language description of how the previous solution can be improved.",
                 "You should be very specific and should only propose a single actionable improvement.",
                 "This improvement should be atomic so that we can experimentally evaluate the effect of the proposed change.",
@@ -349,8 +319,18 @@ class Agent:
                 "The solution sketch should be 3-5 sentences.",
                 "Don't suggest to do EDA.",
             ],
+            "Solution improvement sketch guideline": improve_prompt,
+            "Is the higher the better": higher_better,
+            "Model performance": wrap_code(parent_node.term_out, lang=""),
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
+        with open("/home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
+        prompt["Python Code Template"] = f"""
+```
+{draft_code_template}
+```
+"""
 
         plan, code = self.plan_and_code_query(prompt, qType="_improve")
         new_node = Node(plan=plan, code=code, parent=parent_node)
@@ -361,8 +341,8 @@ class Agent:
         introduction = (
             "You are a Kaggle grandmaster attending a competition. "
             "Your previous solution had a bug and/or did not produce a submission.csv, "
-            "so based on the information below, you should revise it in order to fix this without introducing new bugs and changing the overall search space. "
-            "Your response should not change the code architecture in `pyglove` format and use `pyglove` still. "
+            "so based on the information below, you should keep the PyGlove format and only fix bugs without introducing new bugs and changing the overall search space. "
+            "Your response should not change the code architecture in `PyGlove` format and use `PyGlove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
         )
@@ -381,8 +361,316 @@ class Agent:
             "Execution output": wrap_code(parent_node.term_out, lang=""),
             "Instructions": {},
         }
+        if "Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7:
+            prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
+
         prompt["Instructions"] |= self._prompt_resp_fmt
         prompt["Instructions"] |= {
+            "References of using Pyglove": 
+"""- @pg.symbolize(*args, **kwargs): Make a symbolic class/function out of a regular Python class/function.  pg.symbolize is introduced for the purpose of making existing classes/functions symbolically programmable. For use cases that build symbolic classes from scratch (native PyGlove classes), extending pg.Object with @pg.members that declares the symbolic properties is the recommended way. pg.symbolize can be invoked as a class/function decorator, or as a function. When it is used as a decorator, the decorated class or function will be converted to a symbolic type.
+    Parameters:
+        *args 
+            The positional arguments for symbolize are:
+            class_or_fn: applicable when symbolize is called in function mode.
+            constraints: an optional list of tuples that allows users to specify the constraints for arguments from the __init__ method (for class) or the arguments from the function signature (for function). Each tuple should be in format:
+                (<arg_name>, <value_spec>, [description], [arg_metadata])
+            Where arg_name is an argument name that is acceptable to the __init__ method of the class, or the function signature; 'value_spec' is a pg.ValueSpec object that validates the value of the argument. description and arg_metadata are optional, for documentation and meta-programming purposes.
+        **kwargs 
+            Keyword arguments will be passsed through to pg.wrap (for symbolizing classes) and pg.functor_class (for symbolizing functions).
+    Returns:
+        A Symbolic subclass for the decorated/input type.
+    Examples:
+        @pg.symbolize
+        def foo(a, b):
+        return a + b
+
+        def foo(a, b):
+        return a + b
+
+        symbolic_foo = pg.symbolize(foo, [
+            ('a', pg.typing.Int(min_value=0))
+        ], returns=pg.typing.Int())
+
+        class Foo:
+        def __init__(self, a, b):
+            self._a = a
+            self._b = b
+        def result(self):
+            return self._a + self._b
+        SymbolicFoo = pg.symbolize(Foo)
+
+- @pg.members(fields, metadata=None, init_arg_list=None, serialization_key=None, additional_keys=None, add_to_registry=True): Function/Decorator for declaring symbolic fields for pg.Object.
+    Parameters:
+        fields: A list of pg.typing.Field or equivalent tuple representation as (<key>, <value-spec>, [description], [metadata-objects]). key should be a string. value-spec should be pg_typing.ValueSpec classes or equivalent, e.g. primitive values which will be converted to ValueSpec implementation according to its type and used as its default value. description is optional only when field overrides a field from its parent class. metadata-objects is an optional list of any type, which can be used to generate code according to the schema.
+        metadata: Optional dict of user objects as class-level metadata which will be attached to class schema.
+        init_arg_list: An optional sequence of strings as the positional argument list for __init__. This is helpful when symbolic attributes are inherited from base classes or the user want to change its order. If not provided, the init_arg_list will be automatically generated from symbolic attributes defined from pg.members in their declaration order, from the base classes to the subclass.
+        serialization_key: An optional string to be used as the serialization key for the class during sym_jsonify. If None, cls.__type_name__ will be used. This is introduced for scenarios when we want to relocate a class, before the downstream can recognize the new location, we need the class to serialize it using previous key.
+        additional_keys: An optional list of strings as additional keys to deserialize an object of the registered class. This can be useful when we need to relocate or rename the registered class while being able to load existing serialized JSON values.
+        add_to_registry: If True, register serialization keys and additional keys with the class.
+    Returns:
+        a decorator function that register the class or function with schema created from the fields.
+    Examples:
+        @pg.members([
+        # Declare symbolic fields. Each field produces a symbolic attribute
+        # for its object, which can be accessed by `self.<field_name>`.
+        # Description is optional.
+        ('x', pg.typing.Int(min_value=0, default=0), 'Description for `x`.'),
+        ('y', pg.typing.Str(), 'Description for `y`.')
+        ])
+        class A(pg.Object):
+        def sum(self):
+            return self.x + self.y
+
+        @pg.members([
+        # Override field 'x' inherited from class A and make it more restrictive.
+        ('x', pg.typing.Int(max_value=10, default=5)),
+        # Add field 'z'.
+        ('z', pg.typing.Bool().noneable())
+        ])
+        class B(A):
+        pass
+
+        @pg.members([
+        # Declare dynamic fields: any keyword can be acceptable during `__init__`
+        # and can be accessed using `self.<field_name>`.
+        (pg.typing.StrKey(), pg.typing.Int())
+        ])
+        class D(B):
+        pass
+
+        @pg.members([
+        # Declare dynamic fields: keywords started with 'foo' is acceptable.
+        (pg.typing.StrKey('foo.*'), pg.typing.Int())
+        ])
+        class E(pg.Object):
+        pass
+  
+- pg.Object(*args, allow_partial=False, sealed=None, root_path=None, explicit_init=False, **kwargs): Base class for symbolic user classes. PyGlove allow symbolic programming interfaces to be easily added to most Python classes in two ways:
+    1) Developing a dataclass-like symbolic class by subclassing pg.Object.
+    2) Developing a class as usual and decorate it using pg.symbolize. This also work with existing classes.
+    By directly subclassing pg.Object, programmers can create new symbolic classes with the least effort. For example:
+        @pg.members([
+            # Each tuple in the list defines a symbolic field for `__init__`.
+            ('name', pg.typing.Str().noneable(), 'Name to greet'),
+            ('time_of_day',
+            pg.typing.Enum('morning', ['morning', 'afternnon', 'evening']),
+            'Time of the day.')
+        ])
+        class Greeting(pg.Object):
+
+        def __call__(self):
+            # Values for symbolic fields can be accessed
+            # as public data members of the symbolic object.
+            print(f'Good {self.time_of_day}, {self.name}')
+
+        # Create an object of Greeting and invoke it,
+        # which shall print 'Good morning, Bob'.
+        Greeting('Bob')()
+    Symbolic fields can be inherited from the base symbolic class: the fields from the base class will be copied to the subclass in their declaration order, while the subclass can override the inherited fields with more restricted validation rules or different default values. For example:
+        @pg.members([
+            ('x', pg.typing.Int(max_value=10)),
+            ('y', pg.typing.Float(min_value=0))
+        ])
+        class Foo(pg.Object)
+        pass
+
+        @pg.members([
+            ('x', pg.typing.Int(min_value=1, default=1)),
+            ('z', pg.typing.Str().noneable())
+        ])
+        class Bar(Foo)
+        pass
+
+        # Printing Bar's schema will show that there are 3 parameters defined:
+        # x : pg.typing.Int(min_value=1, max_value=10, default=1))
+        # y : pg.typing.Float(min_value=0)
+        # z : pg.typing.Str().noneable()
+        print(Bar.__schema__)
+
+- pg.eq(left, right): Compares if two values are equal. Use symbolic equality if possible.
+    Parameters:
+        left: The left-hand value to compare.
+        right: The right-hand value to compare.
+    Returns:
+        True if left and right is equal or symbolically equal. Otherwise False.
+
+- pg.oneof(candidates, *, name=None, hints=None): N choose 1.
+    Parameters:
+        candidates: Candidates to select from. Items of candidate can be any type, therefore it can have nested hyper primitives, which forms a hierarchical search space.
+        name: A name that can be used to identify a decision point in the search space. This is needed when the code to instantiate the same hyper primitive may be called multiple times under a pg.DynamicEvaluationContext.collect context or under a pg.DynamicEvaluationContext.apply context.
+        hints: An optional value which acts as a hint for the controller.
+    Returns:
+        In symbolic mode, this function returns a ChoiceValue. In dynamic evaluation mode, this function returns one of the items in candidates. If evaluated under a pg.DynamicEvaluationContext.apply scope, this function will return the selected candidate. If evaluated under a pg.DynamicEvaluationContext.collect scope, it will return the first candidate.
+    Example:
+        @pg.members([
+        ('x', pg.typing.Int())
+        ])
+        class A(pg.Object):
+        pass
+
+        # A single categorical choice:
+        v = pg.oneof([1, 2, 3])
+
+        # A complex type as candidate.
+        v1 = pg.oneof(['a', {'x': 1}, A(1)])
+
+        # A hierarchical categorical choice:
+        v2 = pg.oneof([
+            'foo',
+            'bar',
+            A(pg.oneof([1, 2, 3]))
+        ])
+
+- pg.floatv(min_value, max_value, scale=None, *, name=None, hints=None): A continuous value within a range.
+    Parameters:
+        min_value: Minimum acceptable value (inclusive).
+        max_value: Maximum acceptable value (inclusive).
+        scale: An optional string as the scale of the range. Supported values are None, 'linear', 'log', and 'rlog'. If None, the feasible space is unscaled. If linear, the feasible space is mapped to [0, 1] linearly. If log, the feasible space is mapped to [0, 1] logarithmically with 
+            formula x -> log(x / min) / log(max / min).
+            If rlog, the feasible space is mapped to [0, 1] “reverse” logarithmically, resulting in values close to max_value spread out more than the points near the min_value, with formula: x -> 1.0 - log((max + min - x) / min) / log (max / min). 
+            min_value must be positive if scale is not None. Also, it depends on the search algorithm to decide whether this information is used or not.
+        name: A name that can be used to identify a decision point in the search space. This is needed when the code to instantiate the same hyper primitive may be called multiple times under a pg.DynamicEvaluationContext.collect context or a pg.DynamicEvaluationContext.apply context.
+        hints: An optional value which acts as a hint for the controller.
+    Returns:
+        In symbolic mode, this function returns a Float. In dynamic evaluate mode, this function returns a float value that is no less than the min_value and no greater than the max_value. If evaluated under an pg.DynamicEvaluationContext.apply scope, this function will return a chosen float value from the controller decisions. If evaluated under a pg.DynamicEvaluationContext.collect scope, it will return min_value.
+    Example:
+        # A continuous value within [0.0, 1.0]
+        v = pg.floatv(0.0, 1.0)
+
+- pg.manyof(k, candidates, distinct=True, sorted=False, *, name=None, hints=None, **kwargs): N choose K.
+    Parameters:
+        k: number of choices to make. Should be no larger than the length of candidates unless choice_distinct is set to False,
+        candidates: Candidates to select from. Items of candidate can be any type, therefore it can have nested hyper primitives, which forms a hierarchical search space.
+        distinct: If True, each choice needs to be unique.
+        sorted: If True, choices are sorted by their indices in the candidates.
+        name: A name that can be used to identify a decision point in the search space. This is needed when the code to instantiate the same hyper primitive may be called multiple times under a pg.DynamicEvaluationContext.collect context or a pg.DynamicEvaluationContext.apply context.
+        hints: An optional value which acts as a hint for the controller.
+        **kwargs: Keyword arguments for backward compatibility. choices_distinct: Old name for distinct. choices_sorted: Old name for sorted.
+    Returns:
+        In symbolic mode, this function returns a Choices. In dynamic evaluate mode, this function returns a list of items in candidates. If evaluated under a pg.DynamicEvaluationContext.apply scope, this function will return a list of selected candidates. If evaluated under a pg.DynamicEvaluationContext.collect scope, it will return a list of the first valid combination from the candidates. For example:
+
+        # Evaluates to [0, 1, 2].
+        manyof(3, range(5))
+        # Evaluates to [0, 0, 0].
+        manyof(3, range(5), distinct=False)
+    Examples:
+        @pg.members([
+            ('x', pg.typing.Int())
+        ])
+        class A(pg.Object):
+        pass
+
+        # Chooses 2 distinct candidates.
+        v = pg.manyof(2, [1, 2, 3])
+
+        # Chooses 2 non-distinct candidates.
+        v = pg.manyof(2, [1, 2, 3], distinct=False)
+
+        # Chooses 2 distinct candidates sorted by their indices.
+        v = pg.manyof(2, [1, 2, 3], sorted=True)
+
+        # A complex type as candidate.
+        v1 = pg.manyof(2, ['a', {'x': 1}, A(1)])
+
+        # A hierarchical categorical choice:
+        v2 = pg.manyof(2, [
+            'foo',
+            'bar',
+            A(pg.oneof([1, 2, 3]))
+        ])
+
+- pg.typing.Union(candidates, default=MISSING_VALUE, is_noneable=False, frozen=False): Value spec for Union.
+    Examples:
+        # A required int or float value.
+        pg.typing.Union([pg.typing.Int(), pg.typing.Float()])
+
+        # An optional int or float value with default set to None.
+        pg.typing.Union([pg.typing.Int(), pg.typing.Float()]).noneable()
+
+        # A dict of specific keys, instance of class A or B, with {x=1} as its
+        # default value.
+        pg.typing.Union([
+            pg.typing.Dict([
+                ('x', pg.typing.Int(min_value=1)),
+            ]),
+            pg.typing.Object(A),
+            pg.typing.Object(B),
+        ], default={'x': 1})
+
+- pg.typing.Floatdefault=MISSING_VALUE, min_value=None, max_value=None, is_noneable=False, frozen=False): Value spec for float type.
+    Examples:
+        # A required float value.
+        pg.typing.Float()
+
+        # A required float value with min and max value (both inclusive.)
+        pg.typing.Float(min_value=1.0, max_value=10.0)
+
+        # A float value with the default value set to 1
+        pg.typing.Float(default=1)
+
+        # An optional float value with default value set to None.
+        pg.typing.Float().noneable()
+
+        # An optional float value with default value set to 1.0.
+        pg.typing.Float(default=1.0).noneable()
+
+        # A frozen float with value set to 1.0 that is not modifiable by subclasses.
+        pg.typing.Float().freeze(1)
+
+- pg.typing.Int(default=MISSING_VALUE, min_value=None, max_value=None, is_noneable=False, frozen=False): Value spec for int type.
+    Examples:
+        # A required int value.
+        pg.typing.Int()
+
+        # A required int value with min and max value (both inclusive.)
+        pg.typing.Int(min_value=1, max_value=10)
+
+        # A int value with the default value set to 1
+        pg.typing.Int(default=1)
+
+        # An optional int value with default value set to None.
+        pg.typing.Int().noneable()
+
+        # An optional int value with default value set to 1.
+        pg.typing.Int(default=1).noneable()
+
+        # A frozen int with value set to 1 that is not modifiable by subclasses.
+        pg.typing.Int().freeze(1)
+
+- pg.typing.Str(default=MISSING_VALUE, regex=None, is_noneable=False, frozen=False): Value spec for string type.
+    Examples:
+        # A required str value.
+        pg.typing.Str()
+
+        # A required str value which matches with a regular expression.
+        pg.typing.Str(regex='foo.*'))
+
+        # A str value with the default value set to 'foo'.
+        pg.typing.Str(default='foo')
+
+        # An optional str value with default value set to None.
+        pg.typing.Str().noneable()
+
+        # An optional str value with default value set to 'foo'.
+        pg.typing.Str(default='foo').noneable()
+
+        # A frozen str with value set to 'foo' that is not modifiable by subclasses.
+        pg.typing.Str().freeze('foo')
+
+- pg.typing.Enum(default, values, frozen=False): Value spec for enum type.
+    Examples:
+        # A str enum value with options 'a', 'b', 'c' and its default set to 'a'.
+        pg.typing.Enum('a', ['a', 'b', 'c'])
+
+        # A mixed-type enum value.
+        pg.typing.Enum('a', ['a', 5, True])
+
+        # An optional enum value with default value set to 'a'.
+        pg.typing.Enum('a', ['a', 'b', 'c']).noneable()
+
+        # A frozen enum with value set to 'a' that is not modifiable by subclasses.
+        pg.typing.Enum('a', ['a', 'b', 'c']).freeze('a')
+""",
             "Bugfix improvement sketch guideline": [
                 "You should write a brief natural language description (3-5 sentences) of how the issue in the previous implementation can be fixed.",
                 "Don't suggest to do EDA.",
@@ -522,10 +810,10 @@ class Agent:
 
             if parent_node is None:
                 result_node = self._draft()
-            # elif parent_node.is_buggy:
-            #     result_node = self._debug(parent_node)
-            # else:
-            #     result_node = self._improve(parent_node)
+            elif parent_node.is_buggy:
+                result_node = self._debug(parent_node)
+            else:
+                result_node = self._improve(parent_node)
 
             result_node = self.parse_exec_result(
                 node=result_node,
@@ -760,6 +1048,8 @@ class Agent:
                     maximize_setting = not response["lower_is_better"]
                     compare[competition] = maximize_setting
 
+            global higher_better
+            higher_better = maximize_setting
             logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {maximize_setting}")
             
             if isinstance(grade, WorstMetricValue):
