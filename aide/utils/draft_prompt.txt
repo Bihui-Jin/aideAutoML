@@ -26,7 +26,6 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
      - Consider symbolic knobs but not limited to: Imputation knob (`'zero','median'`), scaler knob (`'standard','robust','none'`).
    - For IMAGE CLASSIFICATION (only if description/data clearly indicate images):
      - Consider symbolic knobs but not limited to: simple torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
-   - Consider to use bootstrap if beneficial.
    - Return both features `(X_all, X_test)` (and any IDs if needed inside `run()`), but keep method signature as in the template.
 
 2) **Model Architecture Search Space (model)**
@@ -56,6 +55,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
    - Refit on full train with same hyperparams (you can skip early stop here for speed).
    - Predict test set probabilities.
    - Return `(score, test_probs)`.
+
 
 Now, FILL IN THE TEMPLATE:
 - Declare all PyGlove knobs in `__init__`.

@@ -33,6 +33,7 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
 
 4) **Fill in the "Python Code Template"** using the refined search space:
    - **Data processing (competition-aware)**: Based on **Task description** and the actual train/test schema, implement feature engineering appropriate to the task (e.g., for RAOP-like text: TF-IDF/Hashing + optional SVD + numeric side channels + scaling). Use PyGlove knobs for the **remaining determining** preprocessing choices; fix finalized ones from step 1.
+   - Consider to use bootstrap if beneficial.
    - In `__init__`, define **both finalized and determining** knobs:
       - Finalized knobs: fixed literals.
       - Determining knobs: pruned candidate lists (or narrowed `pg.floatv` / `pg.oneof`).

@@ -379,7 +379,9 @@ class Agent:
             prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
 
         prompt["Instructions"] |= self._prompt_resp_fmt
-        prompt["Instructions"] |= {
+
+        if parent_node.term_out.count("pg.") > 1:
+            prompt["Instructions"] |= {
             "References of using Pyglove": 
 """- @pg.symbolize(*args, **kwargs): Make a symbolic class/function out of a regular Python class/function.  pg.symbolize is introduced for the purpose of making existing classes/functions symbolically programmable. For use cases that build symbolic classes from scratch (native PyGlove classes), extending pg.Object with @pg.members that declares the symbolic properties is the recommended way. pg.symbolize can be invoked as a class/function decorator, or as a function. When it is used as a decorator, the decorated class or function will be converted to a symbolic type.
     Parameters:
@@ -684,7 +686,8 @@ class Agent:
 
         # A frozen enum with value set to 'a' that is not modifiable by subclasses.
         pg.typing.Enum('a', ['a', 'b', 'c']).freeze('a')
-""",
+""",}
+        prompt["Instructions"] |= {
             "Bugfix improvement sketch guideline": [
                 "You should write a brief natural language description (3-5 sentences) of how the issue in the previous implementation can be fixed.",
                 "Don't suggest to do EDA.",
