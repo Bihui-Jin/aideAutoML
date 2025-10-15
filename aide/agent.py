@@ -326,6 +326,20 @@ class Agent:
         prompt["Instructions"] |= self._prompt_impl_guideline
         with open("/home/templates/draft_code_template.py", "r") as f:
             draft_code_template = f.read()
+        
+        # Find the timeout value in parent_node.code using regex
+        import re
+        timeout_match = re.search(r'_timeout\s*=\s*(\d+)', parent_node.code)
+        if timeout_match:
+            current_timeout = int(timeout_match.group(1))
+            new_timeout = int(current_timeout ** 1.3)
+            # Replace the timeout value in the template
+            draft_code_template = re.sub(
+                r'_timeout\s*=\s*\d+',
+                f'_timeout = {new_timeout}',
+                draft_code_template
+            )
+
         prompt["Python Code Template"] = f"""
 ```
 {draft_code_template}
