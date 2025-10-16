@@ -8,6 +8,7 @@ import subprocess
 import json
 
 import os
+import re
 
 import humanize
 from .backend import FunctionSpec, compile_prompt_to_md, query
@@ -23,62 +24,14 @@ logger = logging.getLogger("aide")
 def format_time(time_in_sec: int):
     return f"{time_in_sec // 3600}hrs {(time_in_sec % 3600) // 60}mins {time_in_sec % 60}secs"
 
-main_exec_code_template = """exp_template = Experiment()
-
-best_score, best_exp = None, None
-best_test_probs = None
-_timeout = 30
-trial, upper_bound = 1, 1
-
-print("Model performance")
-for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
-    # Limit to 50 trial
-    if trial > 50: 
-        break 
-    # Limit the upper bound of total trial to avoid infinite loop
-    if upper_bound > 100:
-        break
-    upper_bound += 1
-
-    try:
-        result = run_with_timeout(exp.run, timeout_sec=_timeout)
-        
-        if not result[0]:
-            # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
-            feedback(0.0)
-            # Clean up GPU memory
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-            continue
-
-        success, (score, test_probs) = result
-        feedback(score)
-        print(f"\n=== Trial {trial}===")
-        print(f"Validation score: {score:.6f}")
-        print(f"Tested parameters: {exp}")
-
-        # Track best
-        if score > best_score or not best_score:
-            best_score = score
-            best_test_probs = test_probs
-            best_exp = exp
-        
-        trial += 1
-    except Exception as e:
-        # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
-        feedback(0.0)  
-        print(f"Trial failed with exception: {e}")
-        # Clean up GPU memory
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        continue
-
-print(f"\n=== Search Complete ===")
-print(f"Best Validation Score: {best_score:.6f}")
-print(f"Best Parameters: {best_exp}")
-"""
+with open("/home/templates/draft_code_template.py", "r") as f:
+    draft_code_template = f.read()
+main_exec_match = re.search(
+    r'# Main Execution Code Chunk.*?# ----------------------------\n(.*?)\n# ----------------------------\n# Finished',
+    draft_code_template,
+    re.DOTALL
+)
+main_exec_code_template = main_exec_match.group(1).strip()
 
 ExecCallbackType = Callable[[str, bool], ExecutionResult]
 
@@ -394,7 +347,7 @@ class Agent:
                 "Don't suggest to do EDA.",
             ],
             "Solution improvement sketch guideline": improve_prompt,
-            "Is the higher the better": higher_better,
+            "Is the higher the better": "True" if higher_better else "False",
             "Model performance": wrap_code(parent_node.term_out, lang=""),
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
@@ -454,7 +407,7 @@ class Agent:
 
         prompt["Instructions"] |= self._prompt_resp_fmt
 
-        if parent_node.term_out.count("pg.") > 1:
+        if parent_node.term_out.count("pg.") > 1 or parent_node.term_out.count("pyglove") > 1:
             prompt["Instructions"] |= {
             "References of using Pyglove": 
 """- @pg.symbolize(*args, **kwargs): Make a symbolic class/function out of a regular Python class/function.  pg.symbolize is introduced for the purpose of making existing classes/functions symbolically programmable. For use cases that build symbolic classes from scratch (native PyGlove classes), extending pg.Object with @pg.members that declares the symbolic properties is the recommended way. pg.symbolize can be invoked as a class/function decorator, or as a function. When it is used as a decorator, the decorated class or function will be converted to a symbolic type.
@@ -787,6 +740,7 @@ class Agent:
         plan, code = self.plan_and_code_query(prompt, qType="_debug")
         new_node = Node(plan=plan, code=code, parent=parent_node)
         logger.info(f"Debugged node {parent_node.id} to create new node {new_node.id}")
+        logger.info(f"Debugged code:\n{code}")
         return new_node
 
     def update_data_preview(

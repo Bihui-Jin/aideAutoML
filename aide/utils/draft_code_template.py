@@ -170,7 +170,7 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
         print(f"Tested parameters: {exp}")
 
         # Track best
-        if score > best_score or not best_score:
+        if best_score is None or score > best_score:
             best_score = score
             best_test_probs = test_probs
             best_exp = exp
