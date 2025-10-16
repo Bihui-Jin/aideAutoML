@@ -310,7 +310,7 @@ class Agent:
             "Ensure path handling is consistent (os.path.join with the nested directories).",
             "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
             "Validate file existence early and fail fast.",
-            "Do not add new prints/logging; keep changes minimal and clean.",
+            "Do not add new prints/logging.",
             ],
         }
 

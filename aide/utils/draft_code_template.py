@@ -139,18 +139,21 @@ exp_template = Experiment()
 best_score, best_exp = None, None
 best_test_probs = None
 _timeout = 30
-trial, upper_bound = 1, 1
+trial = 1
+
+algo = pg.evolution.regularized_evolution(
+    population_size=16,
+    tournament_size=3,
+    seed=42
+)
 
 with open('/home/agent/output.txt', 'a') as output_file:
     output_file.write("Model performance\n")
-for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
+# Limit the upper bound of total trial to avoid infinite loop
+for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
     # Limit to 50 trial
     if trial > 50: 
         break 
-    # Limit the upper bound of total trial to avoid infinite loop
-    if upper_bound > 100:
-        break
-    upper_bound += 1
 
     try:
         result = run_with_timeout(exp.run, timeout_sec=_timeout)
@@ -209,4 +212,4 @@ if best_test_probs is not None:
         { }
     )
     submission.to_csv("submission/submission.csv", index=False)
-# Do not add new print/logging functions
+# Do not add new prints/logging.
