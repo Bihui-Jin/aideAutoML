@@ -23,8 +23,20 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
 
 2) **Analyze "Model performance" (all trials)** to decide which parameters are still **determining** (impactful/uncertain) and should **remain in the search space**.
    - Keep only the **promising candidates** for those knobs, pruning poor performers.
-   - Narrow continuous ranges (if used via `pg.floatv`) to tighter, performance-informed bounds.
-   - Examples: if `mlp_hidden` best values were {256, 384}, you would keep those; if `lr` good range was around `5e-4`, restrict to `{3e-4, 5e-4, 7e-4}`.
+   - **Do NOT just narrow** to a couple of values. Instead, construct **fine-grained local grids** centered on the best observed values:
+     - Example (TF-IDF `max_features`): if previous good range was [15k–20k], use:  
+       `pg.oneof([15000, 16000, 17000, 18000, 19000, 20000])`  
+       (or step=500 where runtime allows).
+     - Example (learning rate near 5e-4):  
+       `pg.oneof([3e-4, 4e-4, 4.5e-4, 5e-4, 5.5e-4, 6e-4, 7e-4])`
+     - Example (hidden size near 256–384):  
+       `pg.oneof([192, 224, 256, 288, 320, 352, 384])`
+     - Example (dropout near 0.1–0.3):  
+       `pg.oneof([0.05, 0.1, 0.15, 0.2, 0.25, 0.3])`
+     - Example (batch_size near 128–256):  
+       `pg.oneof([96, 128, 160, 192, 224, 256])`
+   - Prefer **dense local grids** over broad coarse ranges. Expand **around** the best region from trials with a **small step size** (e.g., ±20–30% window, step by 5–10%).
+   - If a knob is categorical with two strong contenders, you may keep both, but for each contender attach **granular sub-knobs** (e.g., architecture → layer counts, hidden dims, kernel sizes), also with local grids.
 
 3) **Increase the training sample size a bit** while respecting runtime.
    - Reduce holdout size subtly (e.g., `valid_size` from `0.2` to `0.15` or `0.10`) to train on more data.
@@ -32,13 +44,13 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
    - Keep epochs modest to fit time budget.
 
 4) **Fill in the "Python Code Template"** using the refined search space:
-   - **Data processing (competition-aware)**: Based on **Task description** and the actual train/test schema, implement feature engineering appropriate to the task (e.g., for RAOP-like text: TF-IDF/Hashing + optional SVD + numeric side channels + scaling). Use PyGlove knobs for the **remaining determining** preprocessing choices; fix finalized ones from step 1.
+   - **Data processing (competition-aware)**: Based on **Task description** and the actual train/test schema, implement feature engineering appropriate to the task (e.g., for RAOP-like text: TF-IDF/Hashing + optional SVD + numeric side channels + scaling). Use PyGlove knobs for the **remaining determining** preprocessing choices; fix finalized knobs from step 1 and **granular** determining knobs from step 2.
    - Consider to use bootstrap if beneficial.
    - In `__init__`, define **both finalized and determining** knobs:
       - Finalized knobs: fixed literals.
       - Determining knobs: pruned candidate lists (or narrowed `pg.floatv` / `pg.oneof`).
    - **Model (architecture search space)**: Provide PyTorch models that match the inferred task type (binary text classification, multiclass, regression, etc.). Keep only determining architecture choices; fix the rest per step 1. Ensure output dimensions match the task (1 for binary/logits, K for multiclass).
-   - **Optimizer/Training search space**: Keep determining choices (e.g., optimizer type, LR, weight decay, batch size, epochs) and fix other training knobs if your analysis supports it.
+   - **Optimizer/Training search space**: Keep determining choices (e.g., optimizer type, LR, weight decay, batch size, epochs) with **granular** LR grids as above and fix other training knobs if your analysis supports it.
    - **Evaluation**: Implement the correct competition metric. 
    - **Run**: Build features, do a stratified holdout split (smaller `valid_size`), train, compute validation score, refit on all data, predict test probabilities, and `return (score, test_probs)`.
 
