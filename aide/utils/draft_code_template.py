@@ -1,10 +1,9 @@
-import os, random
+import os, random, gc
 import numpy as np
 import pandas as pd
 import torch
 import threading
 import pyglove as pg
-import signal
 
 # ----------------------------
 # Repro, Device, Utilities (kept from the template)
@@ -24,42 +23,26 @@ set_seed()
 # ----------------------------
 def run_with_timeout(func, timeout_sec):
     """Run function with timeout, return (success, result)"""
-    def timeout_handler(signum, frame):
-        raise TimeoutError("Function execution timed out")
+    result = [None]
+    exception = [None]
     
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout_sec)
+    def target():
+        try:
+            result[0] = func()
+        except Exception as e:
+            exception[0] = e
     
-    try:
-        result = func()
-        signal.alarm(0)  # Cancel alarm
-        return True, result
-    except TimeoutError:
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout_sec)
+    
+    if thread.is_alive():
+        # Thread is still running, timeout occurred
         return False, None
-    except Exception as e:
-        signal.alarm(0)
-        raise e
-    
-    # result = [None]
-    # exception = [None]
-    
-    # def target():
-    #     try:
-    #         result[0] = func()
-    #     except Exception as e:
-    #         exception[0] = e
-    
-    # thread = threading.Thread(target=target, daemon=True)
-    # thread.start()
-    # thread.join(timeout_sec)
-    
-    # if thread.is_alive():
-    #     # Thread is still running, timeout occurred
-    #     return False, None
-    # elif exception[0]:
-    #     raise exception[0]
-    # else:
-    #     return True, result[0]
+    elif exception[0]:
+        raise exception[0]
+    else:
+        return True, result[0]
 
 # ----------------------------
 # Symbolic Experiment
@@ -147,6 +130,7 @@ class Experiment:
         return 
 
 # ----------------------------
+# Main Execution Code Chunk (kept from the origin)
 # Instantiate a compact search space (kept from the template)
 # Do NOT modify below this line until the "Finished" line
 # ----------------------------
@@ -173,6 +157,10 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
         if not result[0]:
             # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
             feedback(0.0)
+            # Clean up GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
             continue
 
         success, (score, test_probs) = result
@@ -191,6 +179,11 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
     except Exception as e:
         # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
         feedback(0.0)  
+        print(f"Trial failed with exception: {e}")
+        # Clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
         continue
 
 print(f"\n=== Search Complete ===")

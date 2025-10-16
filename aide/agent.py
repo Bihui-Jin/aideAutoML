@@ -23,6 +23,62 @@ logger = logging.getLogger("aide")
 def format_time(time_in_sec: int):
     return f"{time_in_sec // 3600}hrs {(time_in_sec % 3600) // 60}mins {time_in_sec % 60}secs"
 
+main_exec_code_template = """exp_template = Experiment()
+
+best_score, best_exp = None, None
+best_test_probs = None
+_timeout = 30
+trial, upper_bound = 1, 1
+
+print("Model performance")
+for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
+    # Limit to 50 trial
+    if trial > 50: 
+        break 
+    # Limit the upper bound of total trial to avoid infinite loop
+    if upper_bound > 100:
+        break
+    upper_bound += 1
+
+    try:
+        result = run_with_timeout(exp.run, timeout_sec=_timeout)
+        
+        if not result[0]:
+            # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
+            feedback(0.0)
+            # Clean up GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            continue
+
+        success, (score, test_probs) = result
+        feedback(score)
+        print(f"\n=== Trial {trial}===")
+        print(f"Validation score: {score:.6f}")
+        print(f"Tested parameters: {exp}")
+
+        # Track best
+        if score > best_score or not best_score:
+            best_score = score
+            best_test_probs = test_probs
+            best_exp = exp
+        
+        trial += 1
+    except Exception as e:
+        # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
+        feedback(0.0)  
+        print(f"Trial failed with exception: {e}")
+        # Clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        continue
+
+print(f"\n=== Search Complete ===")
+print(f"Best Validation Score: {best_score:.6f}")
+print(f"Best Parameters: {best_exp}")
+"""
 
 ExecCallbackType = Callable[[str, bool], ExecutionResult]
 
@@ -251,10 +307,14 @@ class Agent:
         prompt["Instructions"] |= self._prompt_resp_fmt
         with open("/home/templates/draft_prompt.txt", "r") as f:
             draft_template = f.read()
-        with open("/home/templates/draft_code_template.py", "r") as f:
-            draft_code_template = f.read()
         prompt["Instructions"] |= {
             "Symbolic Model Definition with Pyglove": draft_template,
+            "Batching & tensors": [
+                "Ensure all DataLoader batches are torch.Tensors (never Python lists) if DataLoader is used.",
+                "Provide an explicit collate_fn in DataLoader that stacks items (inputs and targets) into tensors.",
+                "Make targets float32 with a stable shape to avoid numpy scalars/0-D tensors.",
+                "After collation, it must be valid to call .to(device) on both inputs and targets."
+            ],
             "Solution sketch guideline": [
                 # "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
                 "Take the Memory section into consideration when proposing the design,"
@@ -266,11 +326,25 @@ class Agent:
             ],
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
+
+        prompt["Instructions"] |= {"Cautious while coding": [
+            "Use the correct data paths: follow the structure shown in Data Overview.",
+            "Keep the submission path exactly submission/submission.csv.",
+            "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
+            "Ensure path handling is consistent (os.path.join with the nested directories).",
+            "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
+            "Validate file existence early and fail fast.",
+            "Do not add new prints/logging; keep changes minimal and clean.",
+            ],
+        }
+
         prompt["Instructions"] |= self._prompt_environment
 
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
 
+        with open("/home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
         prompt["Python Code Template"] = f"""
 ```
 {draft_code_template}
@@ -691,10 +765,22 @@ class Agent:
             "Bugfix improvement sketch guideline": [
                 "You should write a brief natural language description (3-5 sentences) of how the issue in the previous implementation can be fixed.",
                 "Don't suggest to do EDA.",
+                "Do not change the overall solution architecture and use PyGlove still.",
+                "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
+            ],
+            "Search budget & trials": [
+                "Do not add or enforce timeouts; run trials to completion unless an actual error occurs.",
+                "Do not introduce or depend on trial-count caps; assume any existing caps in the template are soft and unrelated to correctness."
             ],
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
 
+        prompt["Main Execution Code Chunk Template"] = f"""
+```
+{main_exec_code_template}
+```
+"""
+        
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
 
