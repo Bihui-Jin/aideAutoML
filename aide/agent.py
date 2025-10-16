@@ -24,6 +24,29 @@ logger = logging.getLogger("aide")
 def format_time(time_in_sec: int):
     return f"{time_in_sec // 3600}hrs {(time_in_sec % 3600) // 60}mins {time_in_sec % 60}secs"
 
+def increase_timeout_limit(text, multiple: float = None, new_timeout: int = None):
+    # Find the timeout value in parent_node.code using regex
+    if new_timeout is not None:
+        # Replace the timeout value in the template
+        return re.sub(
+            r'_timeout\s*=\s*\d+',
+            f'_timeout = {new_timeout}',
+            text
+        )
+    else:
+        timeout_match = re.search(r'_timeout\s*=\s*(\d+)', text)
+        if timeout_match:
+            current_timeout = int(timeout_match.group(1))
+            new_timeout = int(current_timeout ** 1.3) if multiple is None else int(current_timeout ** multiple)
+            # Replace the timeout value in the template
+            return (re.sub(
+                r'_timeout\s*=\s*\d+',
+                f'_timeout = {new_timeout}',
+                text
+            ), new_timeout)
+        else:
+            return (text, 30)
+    
 with open("/home/templates/draft_code_template.py", "r") as f:
     draft_code_template = f.read()
 main_exec_match = re.search(
@@ -330,8 +353,10 @@ class Agent:
             "Memory": self.journal.generate_summary(),
             "Instructions": {},
         }
+
+        timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
         prompt["Previous solution"] = {
-            "Code": wrap_code(parent_node.code),
+            "Code": wrap_code(timed_code),
         }
 
         prompt["Instructions"] |= self._prompt_resp_fmt
@@ -353,19 +378,8 @@ class Agent:
         prompt["Instructions"] |= self._prompt_impl_guideline
         with open("/home/templates/draft_code_template.py", "r") as f:
             draft_code_template = f.read()
-        
-        # Find the timeout value in parent_node.code using regex
-        import re
-        timeout_match = re.search(r'_timeout\s*=\s*(\d+)', parent_node.code)
-        if timeout_match:
-            current_timeout = int(timeout_match.group(1))
-            new_timeout = int(current_timeout ** 1.3)
-            # Replace the timeout value in the template
-            draft_code_template = re.sub(
-                r'_timeout\s*=\s*\d+',
-                f'_timeout = {new_timeout}',
-                draft_code_template
-            )
+
+        draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
 
         prompt["Python Code Template"] = f"""
 ```
@@ -395,14 +409,26 @@ class Agent:
                 "Your response should be an implementation outline in natural language,"
                 " followed by a single markdown code block which implements the bugfix/solution."
             )
+        
+        timed_code, new_timeout = None, None
+        # Due to timeout issues, we increase the timeout limit here
+        if "Traceback (most recent call last):" not in parent_node.term_out and \
+        parent_node.term_out.count("Trial failed with exception:") <10 and \
+        ("Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7):
+            timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
+
         prompt: Any = {
             "Introduction": introduction,
             "Task description": self.task_desc,
-            "Previous (buggy) implementation": wrap_code(parent_node.code),
+            "Previous (buggy) implementation": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
             "Execution output": wrap_code(parent_node.term_out, lang=""),
             "Instructions": {},
         }
-        if "Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7:
+
+        # Due to timeout issues, we increase the timeout limit here
+        if "Traceback (most recent call last):" not in parent_node.term_out and \
+        parent_node.term_out.count("Trial failed with exception:") <10 and \
+        ("Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7):
             prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
 
         prompt["Instructions"] |= self._prompt_resp_fmt
@@ -727,10 +753,10 @@ class Agent:
             ],
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
-
+        
         prompt["Main Execution Code Chunk Template"] = f"""
 ```
-{main_exec_code_template}
+{main_exec_code_template if new_timeout is None else increase_timeout_limit(main_exec_code_template, new_timeout=new_timeout)}
 ```
 """
         
