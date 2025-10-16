@@ -37,7 +37,7 @@ def increase_timeout_limit(text, multiple: float = None, new_timeout: int = None
         timeout_match = re.search(r'_timeout\s*=\s*(\d+)', text)
         if timeout_match:
             current_timeout = int(timeout_match.group(1))
-            new_timeout = int(current_timeout ** 1.3) if multiple is None else int(current_timeout ** multiple)
+            new_timeout = int(current_timeout * 1.5) if multiple is None else int(current_timeout * multiple)
             # Replace the timeout value in the template
             return (re.sub(
                 r'_timeout\s*=\s*\d+',
@@ -362,6 +362,8 @@ class Agent:
         prompt["Instructions"] |= self._prompt_resp_fmt
         with open("/home/templates/improve_prompt.txt", "r") as f:
             improve_prompt = f.read()
+        with open('/home/agent/output.txt', 'r') as output_file:
+            output_perf = output_file.read()
         prompt["Instructions"] |= {
             "Solution requirments": [
                 "The solution sketch should be a brief natural language description of how the previous solution can be improved.",
@@ -373,7 +375,7 @@ class Agent:
             ],
             "Solution improvement sketch guideline": improve_prompt,
             "Is the higher the better": "True" if higher_better else "False",
-            "Model performance": wrap_code(parent_node.term_out, lang=""),
+            "Model performance": wrap_code(output_perf, lang=""),
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
         with open("/home/templates/draft_code_template.py", "r") as f:
@@ -410,11 +412,17 @@ class Agent:
                 " followed by a single markdown code block which implements the bugfix/solution."
             )
         
+        if os.path.exists('/home/agent/output.txt'):
+            with open('/home/agent/output.txt', 'r') as output_file:
+                output_perf = output_file.read()
+        else:
+            output_perf = ""
+
         timed_code, new_timeout = None, None
         # Due to timeout issues, we increase the timeout limit here
         if "Traceback (most recent call last):" not in parent_node.term_out and \
         parent_node.term_out.count("Trial failed with exception:") <10 and \
-        ("Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7):
+        ("Trial" not in output_perf or len([x for x in output_perf.split("\n") if "Trial" in x]) < 7):
             timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
 
         prompt: Any = {
@@ -424,11 +432,12 @@ class Agent:
             "Execution output": wrap_code(parent_node.term_out, lang=""),
             "Instructions": {},
         }
-
+        
+        
         # Due to timeout issues, we increase the timeout limit here
         if "Traceback (most recent call last):" not in parent_node.term_out and \
         parent_node.term_out.count("Trial failed with exception:") <10 and \
-        ("Trial" not in parent_node.term_out or len([x for x in parent_node.term_out.split("\n") if "Trial" in x]) < 7):
+        ("Trial" not in output_perf or len([x for x in output_perf.split("\n") if "Trial" in x]) < 7):
             prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
 
         prompt["Instructions"] |= self._prompt_resp_fmt
@@ -939,6 +948,11 @@ class Agent:
             self.current_step += 1
 
     def parse_exec_result(self, node: Node, exec_result: ExecutionResult) -> Node:
+        if os.path.exists('/home/agent/output.txt'):
+            with open('/home/agent/output.txt', 'r') as output_file:
+                output_perf = output_file.read()
+                logger.info(output_perf)
+
         logger.info(f"Agent is parsing execution results for node {node.id}")
 
         node.absorb_exec_result(exec_result)

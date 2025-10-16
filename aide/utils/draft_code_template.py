@@ -141,7 +141,8 @@ best_test_probs = None
 _timeout = 30
 trial, upper_bound = 1, 1
 
-print("Model performance")
+with open('/home/agent/output.txt', 'a') as output_file:
+    output_file.write("Model performance\n")
 for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
     # Limit to 50 trial
     if trial > 50: 
@@ -162,12 +163,14 @@ for exp, feedback in pg.sample(exp_template, pg.geno.Random()):
                 torch.cuda.empty_cache()
             gc.collect()
             continue
+        
+        with open('/home/agent/output.txt', 'a') as output_file:
+            output_file.write(f"\n=== Trial {trial}===\n")
+            output_file.write(f"Validation score: {score:.6f}\n")
+            output_file.write(f"Tested parameters: {exp}\n")
 
         success, (score, test_probs) = result
         feedback(score)
-        print(f"\n=== Trial {trial}===")
-        print(f"Validation score: {score:.6f}")
-        print(f"Tested parameters: {exp}")
 
         # Track best
         if best_score is None or score > best_score:
