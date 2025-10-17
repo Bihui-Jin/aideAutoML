@@ -201,12 +201,19 @@ def run():
             )
 
         while global_step < cfg.agent.steps:
-            agent.step(exec_callback=exec_callback)
-            # on the last step, print the tree
-            if global_step == cfg.agent.steps - 1:
+            try:
+                agent.step(exec_callback=exec_callback)
+                # on the last step, print the tree
+                if global_step == cfg.agent.steps - 1:
+                    logger.info(journal_to_string_tree(journal))
+                save_run(cfg, journal)
+                global_step = len(journal)
+            except StopIteration as e:
+                # Early stopping triggered by agent
+                logger.info(f"Early stopping triggered: {str(e)}")
                 logger.info(journal_to_string_tree(journal))
-            save_run(cfg, journal)
-            global_step = len(journal)
+                save_run(cfg, journal)
+                break
         interpreter.cleanup_session()
 
         logger.info("AIDE completed successfully")

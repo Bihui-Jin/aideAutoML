@@ -121,6 +121,7 @@ class Agent:
         self.current_step = 0
         self.initial_code = initial_code
         self.current_solution = None
+        self.no_improvement_count = 0  # Add counter for consecutive non-improvements
 
     def search_policy2(self) -> Node | None:
         """
@@ -328,7 +329,7 @@ class Agent:
 """
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
-        logger.info(f"Drafted code:\n{code}")
+        # logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
         logger.info(f"Drafted new node {new_node.id}")
         return new_node
@@ -775,7 +776,7 @@ class Agent:
         plan, code = self.plan_and_code_query(prompt, qType="_debug")
         new_node = Node(plan=plan, code=code, parent=parent_node)
         logger.info(f"Debugged node {parent_node.id} to create new node {new_node.id}")
-        logger.info(f"Debugged code:\n{code}")
+        # logger.info(f"Debugged code:\n{code}")
         return new_node
 
     def update_data_preview(
@@ -942,16 +943,21 @@ class Agent:
                     # take note of the node id of the best node
                     with open(best_solution_dir / "node_id.txt", "w") as f:
                         f.write(str(result_node.id))
+                    self.no_improvement_count = 0
                 else:
+                    self.no_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy else 0
                     logger.info(f"Node {result_node.id} is not the best node")
                     logger.info(f"Node {best_node.id} is still the best node")
             self.current_step += 1
+
+            if self.no_improvement_count >= self.acfg.max_no_improvement:
+                raise StopIteration(f"Early stopping: {self.acfg.max_no_improvement} consecutive nodes without improvement")
 
     def parse_exec_result(self, node: Node, exec_result: ExecutionResult) -> Node:
         if os.path.exists('/home/agent/output.txt'):
             with open('/home/agent/output.txt', 'r') as output_file:
                 output_perf = output_file.read()
-                logger.info(output_perf)
+                logger.info(output_perf[:200])
 
         logger.info(f"Agent is parsing execution results for node {node.id}")
 

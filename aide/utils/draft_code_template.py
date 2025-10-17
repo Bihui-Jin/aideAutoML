@@ -147,7 +147,7 @@ algo = pg.evolution.regularized_evolution(
     seed=42
 )
 
-with open('/home/agent/output.txt', 'a') as output_file:
+with open('/home/agent/output.txt', 'w') as output_file:
     output_file.write("Model performance\n")
 # Limit the upper bound of total trial to avoid infinite loop
 for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
@@ -155,42 +155,32 @@ for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
     if trial > 50: 
         break 
 
-    try:
-        result = run_with_timeout(exp.run, timeout_sec=_timeout)
-        
-        if not result[0]:
-            # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
-            feedback(0.0)
-            # Clean up GPU memory
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
-            continue
-        
-        with open('/home/agent/output.txt', 'a') as output_file:
-            output_file.write(f"\n=== Trial {trial}===\n")
-            output_file.write(f"Validation score: {score:.6f}\n")
-            output_file.write(f"Tested parameters: {exp}\n")
-
-        success, (score, test_probs) = result
-        feedback(score)
-
-        # Track best
-        if best_score is None or score > best_score:
-            best_score = score
-            best_test_probs = test_probs
-            best_exp = exp
-        
-        trial += 1
-    except Exception as e:
+    result = run_with_timeout(exp.run, timeout_sec=_timeout)
+    
+    if not result[0]:
         # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
-        feedback(0.0)  
-        print(f"Trial failed with exception: {e}")
+        feedback(0.0)
         # Clean up GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
         continue
+    
+    with open('/home/agent/output.txt', 'a') as output_file:
+        output_file.write(f"\n=== Trial {trial}===\n")
+        output_file.write(f"Validation score: {score:.6f}\n")
+        output_file.write(f"Tested parameters: {exp}\n")
+
+    success, (score, test_probs) = result
+    feedback(score)
+
+    # Track best
+    if best_score is None or score > best_score:
+        best_score = score
+        best_test_probs = test_probs
+        best_exp = exp
+    
+    trial += 1
 
 print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")
