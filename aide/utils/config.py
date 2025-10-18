@@ -54,6 +54,7 @@ class AgentConfig:
 
     search: SearchConfig
 
+    max_no_improvement: int
 
 @dataclass
 class ExecConfig:
