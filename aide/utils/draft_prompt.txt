@@ -1,7 +1,7 @@
 Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures, optimizer/training strategies, and (4) train/evaluate and save a valid submission.
 
 ########### ABSOLUTE REQUIREMENTS ###########
-- Frameworks: Use **PyTorch** for neural nets (run on GPU, `DEVICE` already set). You may instantiate **Mixture-of-Experts (MoE)** components with PyTorch, and optionally use **scikit-learn** for preprocessing and **HuggingFace Transformers** as backbones when task-appropriate. All models must be Torch modules trained in this script.
+- Frameworks: Use **PyTorch** for neural nets (run on GPU, `DEVICE` already set). You may instantiate **Mixture-of-Experts (MoE)** components with PyTorch, and optionally use **scikit-learn** for preprocessing and **HuggingFace Transformers** or **timm** as backbones when task-appropriate. All models must be Torch modules trained in this script.
 - Search Spaces (PyGlove): Define **all tunable knobs** with `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates).  
   - Do **NOT** pass `default` to `pg.oneof` (not supported).  
   - Every symbolic choice must have concrete candidate values so the script runs immediately (no empty candidate sets).
@@ -9,7 +9,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 - Decorate `Experiment` with `@pg.symbolize` and fill:
   - `__init__`: declare symbolic knobs for **data processing**, **model architecture (incl. MoE/Transformer options as appropriate)**, **optimizer**, and **training**.
   - `data_processing(...)`: implement a **competition-aware** pipeline that uses only task-relevant features; begin with fast iterations (target ~30s sample path switch) and expose a **symbolic data-processing search space** knobs.
-  - `model(...)`: return a **Torch** model (MLP/CNN/RNN/Transformer/MoE as appropriate). Expose an **architecture search space** (e.g., layer counts, widths, heads, dropout grids, activation) appropriate to the inferred task. Move the model to `DEVICE`.
+  - `model(...)`: return a **Torch** / **scikit-learn** / **Transformers** model (Random Forest/MLP/CNN/RNN/Transformer/MoE as appropriate). Expose an **architecture search space** (e.g., layer counts, widths, heads, dropout grids, activation) appropriate to the inferred task. Move the model to `DEVICE`.
   - `_optimizer(...)`: return an optimizer from a **symbolic choice** (Adam/AdamW/SGD/etc.).
   - `training(...)`: implement a training loop (support optional early stopping via symbolic knobs: enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}).
   - `evaluation(...)`: compute and return the competition metric (e.g., ROC-AUC for RAOP). Use **higher-is-better** by design; if the metric is “lower-is-better” (e.g., RMSE), return its **negative**.
@@ -51,7 +51,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
      - Features: windowed Lag/Diff/Derivative, Rolling stats/quantiles/EWMs, Cumsum/area/integrals, interaction FeatureCrosses, GroupBy aggregates, ClusteringFeatures, Time deltas/indices, domain filters (bandpass for EEG, satellite selection for GNSS).
      - Preprocessing: Imputation (careful per entity), Robust/Standard/MinMax scaling (fit on train only), SequenceReshaping to (T, F), GroupKFold/group-aware CV to avoid leakage, postprocess to valid grids (e.g., rounding pressure to known steps).
    - For RECSYS / RANKING tasks:
-     - Features: Label/TargetEncoding of IDs, DatetimeFeatures (recency, cycles), Imputation for demographics, embedding L2 normalization, co-occurrence/association rules; for ranking tasks, percentile ranks, position bias indicators.
+     - Features: Label/TargetEncoding of IDs, DatetimeFeatures (recency, cycles), Imputation for demographics, embedding L2 normalization, co-occurrence; for ranking tasks, percentile ranks, position bias indicators.
    - For STEGANALYSIS / REMOTE SENSING / SPECIAL DOMAINS tasks:
      - Augmentations: rotations/flips; JPEG artefact simulation for steganalysis; undersampling negatives (contrails).
      - Features: false-color composites, temporal stacking/aggregation, intensity clipping, heuristic thresholding for masks.
@@ -59,19 +59,19 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 
 2) **Model Architecture Search Space (model)** Suggestions
    - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
-     - Consider but **not limit to**: use pg.oneof to select from BERT, RoBERTa, DeBERTa/DeBERTaV3, DistilBERT, XLM-RoBERTa, RemBERT, MuRIL, BART, Transformer (custom/seq2seq), AWD-LSTM, classical LogReg/SVM/NaiveBayes, Word2Vec/Doc2Vec, SentenceTransformer, LLaMA/GLM (LLMs in meta-features), etc.
+     - Consider but **not limit to**: use pg.oneof to select from DistilBERT, BERT, RoBERTa, DeBERTa/DeBERTaV3, TinyBERT, XLM-RoBERTa, RemBERT, MuRIL, BART, Transformer (custom/seq2seq), ALBERT, classical LogReg/SVM/NaiveBayes/RandomForest, Word2Vec/Doc2Vec, SentenceTransformer, LLaMA (base models on Hugging Face), etc.
 
    - For IMAGE CLASSIFICATION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet (18/34/50/101/152), DenseNet (121/161/169/201), VGG (16/19), InceptionV3, Inception-ResNet-v2, GoogLeNet, MobileNet/V2, NASNetLarge, EfficientNet (B0–B7), EfficientNetV2, ConvNeXt/ConvNeXtV2, NFNet, ResNeXt, ResNeSt, RexNet, MaxViT/MaxxViT, CoAtNet, BiT, ViT (B/L, /16, /32), DeiT, ShuffleNet, SRNet, SqueezeNet, classical LogisticRegression, SVM, kNN, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
+     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet (18/34/50/101/152), DeiT, MobileViT, DenseNet (121/161/169/201), VGG (16/19), EfficientFormer, Swin-T, InceptionV3, Inception-ResNet-v2, GoogLeNet, DeepLabv3, MobileNet/V2, NASNetLarge, EfficientNet (B0–B7), EfficientNetV2, ConvNeXt/ConvNeXtV2, NFNet, ResNeXt, ResNeSt, RexNet, MaxViT/MaxxViT, CoAtNet, BiT, ViT (B/L, /16, /32), ShuffleNet, SRNet, SqueezeNet, classical LogisticRegression, SVM, kNN, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
   
    - For TIME SERIES / SEQUENCE  tasks (e.g., tabular, sensors, bio, ventilator, GNSS, EEG):
-     - Consider but **not limit to**: use pg.oneof to select from LSTM, GRU, Transformer, CNN, GNN, Autoencoder/Denoising AE, boosting/trees (LGBM/XGB/CB), KalmanFilter, Robust WLS, Linear/Elastic/Ridge/Lasso, SVR, etc.
+     - Consider but **not limit to**: use pg.oneof to select from LSTM, GRU, Transformer, CNN, GNN, Autoencoder/Denoising AE, boosting/trees (LGBM/XGB/CB), Linear/Elastic/Ridge/Lasso, SVR, etc.
 
    - For OBJECT DETECTION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from Faster R-CNN, YOLOv5/YOLOX, EfficientDet, CenterNet, etc.
+     - Consider but **not limit to**: use pg.oneof to select from Faster R-CNN, YOLOv5 (ultralytics/yolov5 from torch.hub.load), EfficientDet, DeepLabv3, YOLOS, MobileViT, SSDLite, DETR, etc.
 
    - For RECOMMENDATION / CTR tasks:
-     - Consider but **not limit to**: use pg.oneof to select from ALS, GRU4Rec/LSTM/CNN, association-rule models, gradient boosting, etc.
+     - Consider but **not limit to**: use pg.oneof to select from ALS, GRU4Rec/LSTM/CNN, gradient boosting, etc.
 
    - For AUDIO (spectrogram / waveform) tasks:
      - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet/18, LSTM/GRU, boosting/trees, etc.
@@ -80,7 +80,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
      - Consider but **not limit to**: use pg.oneof to select from Siamese Network, TF-IDF + linear/trees stacks, etc.
 
    - For SPECIALIZED / OTHER tasks:
-     - Consider but **not limit to**: use pg.oneof to select from DynEdge (graph for IceCube), GeneticAlgorithm (search), CycleGAN (image-to-image), KMeans/PCA (as models), k-Means (clustering baseline), etc.
+     - Consider but **not limit to**: use pg.oneof to select from GeneticAlgorithm (search), CycleGAN (tensorflow image-to-image), KMeans/PCA (as models), k-Means (clustering baseline), etc.
 
    - Ensure the returned model is moved to `DEVICE`.
 
