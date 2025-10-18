@@ -158,8 +158,8 @@ for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
     result = run_with_timeout(exp.run, timeout_sec=_timeout)
     
     if not result[0]:
-        # Give it a bad score (Note that the score can be lower the better or higher the better depending on the competition description, replace 0.0 accordingly)
-        feedback(0.0)
+        # Give it a bad score
+        feedback(float('-inf'))
         # Clean up GPU memory
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

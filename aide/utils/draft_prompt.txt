@@ -1,47 +1,91 @@
 Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures, optimizer/training strategies, and (4) train/evaluate and save a valid submission.
 
 ########### ABSOLUTE REQUIREMENTS ###########
-- Use **PyTorch** for all neural nets; run on GPU if available (`DEVICE` is already set).
-- Use **PyGlove** to define search spaces: use `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates) for all tunable knobs.
-  - Do NOT pass a `default` argument to `pg.oneof` (not supported).
-  - Every symbolic choice must have concrete candidate values so the script runs immediately.
+- Frameworks: Use **PyTorch** for neural nets (run on GPU, `DEVICE` already set). You may instantiate **Mixture-of-Experts (MoE)** components with PyTorch, and optionally use **scikit-learn** for preprocessing and **HuggingFace Transformers** as backbones when task-appropriate. All models must be Torch modules trained in this script.
+- Search Spaces (PyGlove): Define **all tunable knobs** with `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates).  
+  - Do **NOT** pass `default` to `pg.oneof` (not supported).  
+  - Every symbolic choice must have concrete candidate values so the script runs immediately (no empty candidate sets).
 - Keep the provided class/method signatures and the outer NAS loop/timeout helper **unchanged**.
 - Decorate `Experiment` with `@pg.symbolize` and fill:
-  - `__init__`: declare all symbolic knobs for data processing, model, optimizer, and training.
-  - `data_processing(...)`: implement a **competition-aware** pipeline according to the task type; use the only task related features; start with a fast iteration with a small sample of the training set (target to 30 seconds); expose an **data processing search space**.
-  - `model(...)`: return a **Torch** model; expose an **architecture search space** appropriate to the inferred task.
-  - `_optimizer(...)`: return an optimizer from a **symbolic choice** space.
-  - `training(...)`: implement a training loop (optionally with early stopping knobs in the search space).
-  - `evaluation(...)`: compute and return the **competition metric** (e.g., ROC-AUC for RAOP).
-  - `run(...)`: build features, split train/val, train, compute `score`, train on full data, produce test predictions, and `return (score, test_probs)`.
-- `feedabce(0.0)` is used to give a bad score; the score can be lower the better or higher the better depending on the competition description, **replace 0.0 accordingly**.
+  - `__init__`: declare symbolic knobs for **data processing**, **model architecture (incl. MoE/Transformer options as appropriate)**, **optimizer**, and **training**.
+  - `data_processing(...)`: implement a **competition-aware** pipeline that uses only task-relevant features; begin with fast iterations (target ~30s sample path switch) and expose a **symbolic data-processing search space** knobs.
+  - `model(...)`: return a **Torch** model (MLP/CNN/RNN/Transformer/MoE as appropriate). Expose an **architecture search space** (e.g., layer counts, widths, heads, dropout grids, activation) appropriate to the inferred task. Move the model to `DEVICE`.
+  - `_optimizer(...)`: return an optimizer from a **symbolic choice** (Adam/AdamW/SGD/etc.).
+  - `training(...)`: implement a training loop (support optional early stopping via symbolic knobs: enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}).
+  - `evaluation(...)`: compute and return the competition metric (e.g., ROC-AUC for RAOP). Use **higher-is-better** by design; if the metric is “lower-is-better” (e.g., RMSE), return its **negative**.
+  - `run(...)`: build features, split (stratified for classification), train, compute `score`, refit on full data with the same hyperparameters, produce test predictions, and `return (score, test_probs)`.
 - Save a valid **submission** at `submission/submission.csv`. Use the correct columns/format infered from the instruction.
-- **Do NOT add any new print/logging statements anywhere** while filling in code. Do not add any print/logging during CSV saving either.
+- **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
 ########### COMPETITION-AWARE IMPLEMENTATION ###########
-1) **Data Processing Search Space (data_processing)**
-   - For TEXT tasks (e.g., RAOP):
-     - Consider symbolic knobs but not limited to: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word'])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
+1) **Data Processing Search Space (`data_processing`)** Suggestions
+   - For TEXT / NLP / QA / TEXT MATCHING / TOXICITY / SENTIMENT tasks:
+     - Augmentations: SubwordRegularization (SentencePiece), symmetric swaps (response_a↔b TTA), Random undersampling for imbalance.
+     - Features / preprocessing: rigorous TextCleaning (lowercase, URLs/HTML/punct/emoji/digits, contractions, misspellings), Tokenization (WordPiece/BPE; attention masks), Padding/Truncation, TF-IDF/Count + SVD, NB-SVM log-count ratio, length/structure counts, similarities (cosine/Jaccard/Levenshtein), OneHot/LabelEncoding for categories, distribution alignment if targets bounded.
+     - QA specifics: SlidingWindow with doc_stride, span post-cleaning, char-level aggregation via offset_mapping.
+     - Consider symbolic knobs but **not limit to**: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word'])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
    - For TABULAR tasks:
+     - Imbalance: SMOTE / undersampling; for ensembles use Bootstrapping.
+     - Preprocessing: Imputation (mean/median/mode/KNN), Standardization/Robust/MinMax, Log/Power transforms (including target via TransformedTargetRegressor).
+     - Encodings: OneHot, Label/Ordinal, TargetEncoding, frequency/count encodings; careful leakage control with CV.
+     - Feature crafting: polynomial/interactions, correlation filtering, low-variance drop, PCA/SVD, adversarial validation pruning, domain distances (geo Haversine/bearings; airport/landmark distances), string parsing to structured fields.
      - Consider symbolic knobs but not limited to: Imputation knob (`'zero','median'`), scaler knob (`'standard','robust','none'`).
-   - For IMAGE CLASSIFICATION (only if description/data clearly indicate images):
+   - For IMAGE CLASSIFICATION (classification/detection/segmentation) tasks:
+     - Augmentations to consider
+       - Class imbalance or small data: RandomOversampling / Undersampling, MixUp, TTA (flip/rotate/scale).
+       - Invariance to pose/orientation: Flip (H/V), Rotate/RandomRotate90, ShiftScaleRotate, Translation, Zoom/Scale, Shear, Warp/GridDistortion.
+       - Robustness to lighting/color/camera: ColorJitter (brightness/contrast/saturation/hue), Gamma, CLAHE, HueSaturationValue.
+       - Regularization on textures/artefacts: CutOut/CoarseDropout, Blur/NoiseInjection, JPEG artefact sim (JpegCompression).
+       - Inference ensembling: TTA (flip/rot/multi-scale), Weighted Boxes Fusion for detections.
+     - Feature engineering / preprocessing
+       - Always: Resize to backbone input; Normalization/MinMaxScaling; Standardization to ImageNet mean/std or model-specific preprocess_input.
+       - Medical/DICOM: VOILUT, HU rescaling, Photometric inversion fix, Center/ROI crop, Padding to aspect, ChannelReplication for 1→3ch, Orientation correction.
+       - Gigapixel/volumes: SlidingWindow/Tiling with Overlap blending; Slice stacking or Depth pooling for 2.5D; Resampling-3D.
+       - Label format needs: OneHot/MultiLabelBinarization, bbox format conversions; per-class Thresholding / small-object removal.
      - Consider symbolic knobs but not limited to: simple torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
+   - For AUDIO tasks:
+     - Augmentations: TimeShift, RandomCrop on spectrograms, NoiseInjection, SilenceTrim, WaveletDenoising, FrequencyFiltering, TTA.
+     - Features: MelSpectrogram (+ dB/log), MFCC, spectral stats (centroid/rolloff/ZCR), Fixed-length padding/truncation, Standardization/MinMaxScaling, classic stats aggregation.
+   - For TIME SERIES / SEQUENCES (ventilator, GNSS, EEG, volcano, OSIC) tasks:
+     - Augmentations / expansions: Smoothing/KalmanSmoothing, NoiseDenoising, OutlierClipping, Intra-entity pair/window sampling.
+     - Features: windowed Lag/Diff/Derivative, Rolling stats/quantiles/EWMs, Cumsum/area/integrals, interaction FeatureCrosses, GroupBy aggregates, ClusteringFeatures, Time deltas/indices, domain filters (bandpass for EEG, satellite selection for GNSS).
+     - Preprocessing: Imputation (careful per entity), Robust/Standard/MinMax scaling (fit on train only), SequenceReshaping to (T, F), GroupKFold/group-aware CV to avoid leakage, postprocess to valid grids (e.g., rounding pressure to known steps).
+   - For RECSYS / RANKING tasks:
+     - Features: Label/TargetEncoding of IDs, DatetimeFeatures (recency, cycles), Imputation for demographics, embedding L2 normalization, co-occurrence/association rules; for ranking tasks, percentile ranks, position bias indicators.
+   - For STEGANALYSIS / REMOTE SENSING / SPECIAL DOMAINS tasks:
+     - Augmentations: rotations/flips; JPEG artefact simulation for steganalysis; undersampling negatives (contrails).
+     - Features: false-color composites, temporal stacking/aggregation, intensity clipping, heuristic thresholding for masks.
    - Return both features `(X_all, X_test)` (and any IDs if needed inside `run()`), but keep method signature as in the template.
 
-2) **Model Architecture Search Space (model)**
-   - TEXT/TABULAR:
-     - Provide multiple **Torch MLP**-family blueprints exposed via `pg.oneof([...])`, such as:
-       - `'logreg'`: single linear head
-       - `'mlp'`: (layers ∈ {1,2,3}, hidden ∈ {128,256,384/512}, activation ∈ {ReLU,GELU}, dropout ∈ {0.0,0.1,0.2,0.3}, optional BatchNorm)
-       - `'res_mlp'` or `'wide_deep'` variants
-       - others
-     - Output layer size = 1 for binary (sigmoid in eval), K for multiclass (softmax in eval).
-   - IMAGE CLASSIFICATION:
-     - Small CNN or torchvision backbone choice (e.g., resnet18 vs resnet34) with head replacement; keep epochs tiny.
+2) **Model Architecture Search Space (model)** Suggestions
+   - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
+     - Consider but **not limit to**: use pg.oneof to select from BERT, RoBERTa, DeBERTa/DeBERTaV3, DistilBERT, XLM-RoBERTa, RemBERT, MuRIL, BART, Transformer (custom/seq2seq), AWD-LSTM, classical LogReg/SVM/NaiveBayes, Word2Vec/Doc2Vec, SentenceTransformer, LLaMA/GLM (LLMs in meta-features), etc.
+
+   - For IMAGE CLASSIFICATION tasks:
+     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet (18/34/50/101/152), DenseNet (121/161/169/201), VGG (16/19), InceptionV3, Inception-ResNet-v2, GoogLeNet, MobileNet/V2, NASNetLarge, EfficientNet (B0–B7), EfficientNetV2, ConvNeXt/ConvNeXtV2, NFNet, ResNeXt, ResNeSt, RexNet, MaxViT/MaxxViT, CoAtNet, BiT, ViT (B/L, /16, /32), DeiT, ShuffleNet, SRNet, SqueezeNet, classical LogisticRegression, SVM, kNN, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
+  
+   - For TIME SERIES / SEQUENCE  tasks (e.g., tabular, sensors, bio, ventilator, GNSS, EEG):
+     - Consider but **not limit to**: use pg.oneof to select from LSTM, GRU, Transformer, CNN, GNN, Autoencoder/Denoising AE, boosting/trees (LGBM/XGB/CB), KalmanFilter, Robust WLS, Linear/Elastic/Ridge/Lasso, SVR, etc.
+
+   - For OBJECT DETECTION tasks:
+     - Consider but **not limit to**: use pg.oneof to select from Faster R-CNN, YOLOv5/YOLOX, EfficientDet, CenterNet, etc.
+
+   - For RECOMMENDATION / CTR tasks:
+     - Consider but **not limit to**: use pg.oneof to select from ALS, GRU4Rec/LSTM/CNN, association-rule models, gradient boosting, etc.
+
+   - For AUDIO (spectrogram / waveform) tasks:
+     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet/18, LSTM/GRU, boosting/trees, etc.
+
+   - For RETRIEVAL/RANKING / METRICS LEARNING tasks:
+     - Consider but **not limit to**: use pg.oneof to select from Siamese Network, TF-IDF + linear/trees stacks, etc.
+
+   - For SPECIALIZED / OTHER tasks:
+     - Consider but **not limit to**: use pg.oneof to select from DynEdge (graph for IceCube), GeneticAlgorithm (search), CycleGAN (image-to-image), KMeans/PCA (as models), k-Means (clustering baseline), etc.
+
    - Ensure the returned model is moved to `DEVICE`.
 
-3) **Optimizer & Training Search Space**
-   - `_optimizer`: Consider symbolic knobs but not limited to: `pg.oneof(['adam','adamw','sgd'])` and other optimizers with LR choices `{3e-4,5e-4,1e-3}`, optional weight_decay, optional momentum for SGD.
+3) **Optimizer & Training Search Space** Suggestions
+   - `_optimizer`: Consider symbolic knobs but **not limit to**: use pg.oneof to select from Adam, AdamW, RMSprop, SGD, Momentum, Nesterov, Nadam, Adamax, Adagrad, Adadelta, LBFGS, SAGA, SAG, Newton-CG, liblinear, RectifiedAdam, Lookahead, MADGRAD, SLSQP, Nelder-Mead, etc.
    - `training`: implement a mini training loop over `epochs` (e.g., {4,5}) with `batch_size` choices (e.g., {128,256}), criterion choice could be:
      - Binary classification: `BCEWithLogitsLoss`.
      - Multiclass: `CrossEntropyLoss`.
@@ -51,11 +95,24 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 4) **run()**
    - Build features.
    - Stratified (if classification) hold-out split (`valid_size=0.2`) for quick feedback.
-   - Train and compute validation metric.
+   - Train and compute validation metric via `evaluation`.
    - Refit on full train with same hyperparams (you can skip early stop here for speed).
-   - Predict test set probabilities.
+   - Predict test set probabilities in correct order.
    - Return `(score, test_probs)`.
 
+########### MEMORY & TRANSFORMERS NOTE ###########
+- **If a Transformer-based model is selected**, be mindful of GPU memory (48 GB). To avoid OOM:
+  - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
+  - Consider **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
+  - If needed, **split training** into multiple cycles by **reducing input size per cycle** (e.g., shorter sequences / cropped inputs) while **increasing the number of training cycles** to maintain total compute; ensure optimizer state persists across cycles.
+
+########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
+- Make transforms config-driven by task type; separate train/val/test pipelines; gate TTA by task.
+- Standardize normalization paths (ImageNet vs model-specific) and ensure fit leakage control (scalers/imputers fit on train only).
+- Use group-aware CV when entities repeat (patients, breaths, plays, molecules).
+- Centralize post-processing (threshold tuning, rounding to valid grids, WBF for detections).
+- Log data stats and validate shapes after each step (resize/stack/sequence).
+- For NLP, keep tokenizers/versioned vocabs alongside checkpoints; for DICOM, encapsulate VOI/HU/orientation fixes.
 
 Now, FILL IN THE TEMPLATE:
 - Declare all PyGlove knobs in `__init__`.

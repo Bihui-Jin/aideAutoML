@@ -177,6 +177,7 @@ class Agent:
             "bayesian-optimization",
             "timm",
             "pyglove",
+            "transformers",
         ]
         random.shuffle(pkgs)
         pkg_str = ", ".join([f"`{p}`" for p in pkgs])
@@ -304,15 +305,16 @@ class Agent:
         }
         prompt["Instructions"] |= self._prompt_impl_guideline
 
-        prompt["Instructions"] |= {"Cautious while coding": [
-            "Use the correct data paths: follow the structure shown in Data Overview.",
-            "Keep the submission path exactly submission/submission.csv.",
-            "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
-            "Ensure path handling is consistent (os.path.join with the nested directories).",
-            "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
-            "Validate file existence early and fail fast.",
-            "Do not add new prints/logging.",
-            ],
+        prompt["Instructions"] |= {
+            "Cautious while coding": [
+                "Use the correct data paths: follow the structure shown in Data Overview.",
+                "Keep the submission path exactly submission/submission.csv.",
+                "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
+                "Ensure path handling is consistent (os.path.join with the nested directories).",
+                "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
+                "Validate file existence early and fail fast.",
+                "Do not add new prints/logging.",
+                ],
         }
 
         prompt["Instructions"] |= self._prompt_environment
@@ -945,7 +947,7 @@ class Agent:
                         f.write(str(result_node.id))
                     self.no_improvement_count = 0
                 else:
-                    self.no_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy else 0
+                    self.no_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and not result_node.is_buggy else 0
                     logger.info(f"Node {result_node.id} is not the best node")
                     logger.info(f"Node {best_node.id} is still the best node")
             self.current_step += 1
