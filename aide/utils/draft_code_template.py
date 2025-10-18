@@ -138,6 +138,8 @@ exp_template = Experiment()
 
 best_score, best_exp = None, None
 best_test_probs = None
+# authentication key for models from Huggingface
+auth_token = os.getenv("HUGGINGFACE_KEY")
 _timeout = 30
 trial = 1
 

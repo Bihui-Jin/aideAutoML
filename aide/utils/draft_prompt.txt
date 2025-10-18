@@ -103,8 +103,9 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 ########### MEMORY & TRANSFORMERS NOTE ###########
 - **If a Transformer-based model is selected**, be mindful of GPU memory (48 GB). To avoid OOM:
   - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
-  - Consider **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
-  - If needed, **split training** into multiple cycles by **reducing input size per cycle** (e.g., shorter sequences / cropped inputs) while **increasing the number of training cycles** to maintain total compute; ensure optimizer state persists across cycles.
+  - Consider **mixed precision** (fp16/bf16), **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
+  - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
+  - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Make transforms config-driven by task type; separate train/val/test pipelines; gate TTA by task.
