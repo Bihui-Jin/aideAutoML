@@ -361,7 +361,7 @@ class Agent:
             )
         prompt: Any = {
             "Introduction": introduction,
-            "Task description": self.task_desc,
+            # "Task description": self.task_desc,
             "Memory": self.journal.generate_summary(),
             "Instructions": {},
         }
@@ -767,7 +767,7 @@ class Agent:
                 "Don't suggest to do EDA.",
                 "Do not change the overall solution architecture and use PyGlove still.",
                 "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
-                "Do not change the model family/architecture during bug fixing. Instead, only fix the bugs in the previous implementation.",
+                "You **must not** change the model family/architecture (Model search knobs). Instead, only fix the bugs in the previous implementation.",
             ],
             "Search budget & trials": [
                 "Do not add or enforce timeouts; run trials to completion unless an actual error occurs.",

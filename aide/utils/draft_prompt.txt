@@ -12,7 +12,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     1) **Transformer/Text branch** (when task is text): build a tokenizer with `AutoTokenizer.from_pretrained(backbone, use_fast=True, trust_remote_code=True, token=auth_token)` and produce **dict tensors** with keys `input_ids`, `attention_mask`, and include `token_type_ids` when present; **symbolic `max_length ∈ {128, 256, 384}`**.  
     2) **Classical branch**: TF-IDF/Hashing (+ optional SVD) producing dense features; **symbolic** representation choice, ngram ranges, max_features, and optional SVD dims.
     Choose branch via a **symbolic knob** (e.g., `pg.oneof(['transformer','tfidf'])`) while still auto-detecting task type from the dataset description.
-  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include BOTH classic and HF options**.  
+  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include BOTH the latest and robust classic and HF options**. Do not use the HF Transformer released before 2020.  
     - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`; expose head dropout, layer-freeze ratio (freeze bottom *k* encoder layers via a knob), and optional activation/dropout on top.  
     - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
   - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
@@ -69,16 +69,16 @@ Select the relevant subset based on task type you infer from the competition tex
 
 2) **Model Architecture Search Space (model)** Suggestions
    - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
-     - Consider but **not limit to**: use pg.oneof to select from DistilBERT, BERT, RoBERTa, DeBERTa/DeBERTaV3, TinyBERT, XLM-RoBERTa, RemBERT, MuRIL, BART, Transformer (custom/seq2seq), ALBERT, classical LogReg/SVM/NaiveBayes/RandomForest, Word2Vec/Doc2Vec, SentenceTransformer, LLaMA (base models on Hugging Face), etc.
+     - Consider but **not limit to**: use pg.oneof to select from DeBERTa/DeBERTaV3, RemBERT, MuRIL, classical LogReg/SVM/NaiveBayes/RandomForest, SentenceTransformer, LLaMA (base models on Hugging Face), etc.
 
    - For IMAGE CLASSIFICATION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet (18/34/50/101/152), DeiT, MobileViT, DenseNet (121/161/169/201), VGG (16/19), EfficientFormer, Swin-T, InceptionV3, Inception-ResNet-v2, GoogLeNet, DeepLabv3, MobileNet/V2, NASNetLarge, EfficientNet (B0–B7), EfficientNetV2, ConvNeXt/ConvNeXtV2, NFNet, ResNeXt, ResNeSt, RexNet, MaxViT/MaxxViT, CoAtNet, BiT, ViT (B/L, /16, /32), ShuffleNet, SRNet, SqueezeNet, classical LogisticRegression, SVM, kNN, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
+     - Consider but **not limit to**: use pg.oneof to select from EfficientFormer, CNN, MaxViT / MaxxViT, ConvNeXt / ConvNeXtV2, CoAtNet, NFNet, MobileViT, ResNet (18/34/50/101/152),ResNeSt, RexNet, ViT (B/L, /16, /32), DeiT, BiT, Swin-T, EfficientNetV2, classical LogisticRegression, SVM, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
   
    - For TIME SERIES / SEQUENCE  tasks (e.g., tabular, sensors, bio, ventilator, GNSS, EEG):
-     - Consider but **not limit to**: use pg.oneof to select from LSTM, GRU, Transformer, CNN, GNN, Autoencoder/Denoising AE, boosting/trees (LGBM/XGB/CB), Linear/Elastic/Ridge/Lasso, SVR, etc.
+     - Consider but **not limit to**: use pg.oneof to select from Autoencoder/Denoising AE, LSTM, GRU, Transformer, CNN, GNN, boosting/trees (LGBM/XGB/CB), Linear/Elastic/Ridge/Lasso, SVR, etc.
 
    - For OBJECT DETECTION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from Faster R-CNN, YOLOv5 (ultralytics/yolov5 from torch.hub.load), EfficientDet, DeepLabv3, YOLOS, MobileViT, SSDLite, DETR, etc.
+     - Consider but **not limit to**: use pg.oneof to select from YOLOv5 (ultralytics/yolov5 from torch.hub.load), EfficientDet, DeepLabv3, YOLOS, MobileViT, DETR, etc.
 
    - For RECOMMENDATION / CTR tasks:
      - Consider but **not limit to**: use pg.oneof to select from ALS, GRU4Rec/LSTM/CNN, gradient boosting, etc.
@@ -109,16 +109,17 @@ Select the relevant subset based on task type you infer from the competition tex
    - Return `(score, test_probs)`.
 
 ######################## TRANSFORMER REQUIREMENTS (MANDATORY) ########################
-- **Search space must include HF backbones** in `pg.oneof`, e.g., `'LLaMA'`, `'distilbert-base-uncased','bert-base-uncased','roberta-base','deberta-v3-base'`, etc.
+- **Search space must include HF backbones** in `pg.oneof`, e.g., `'LLaMA'`, 'deberta-v3-base'`, etc.
 - **Tokenizer pipeline** in `data_processing` for the Transformer branch with **symbolic `max_length ∈ {128,256,384}`**; produce dict batches with `input_ids`, `attention_mask` (+ `token_type_ids` if present).
-- **Model loading**: `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`, then `.to(DEVICE)`.
 - **Training hygiene**: AMP enabled; **batch_size ∈ {8,16,32}**, **gradient_accumulation_steps ∈ {1,2,4,8}**, **AdamW** with LR `{2e-5,3e-5,5e-5}`; expose `weight_decay` and **layer-freeze ratio** knob (freeze bottom *k* encoder layers).
+- Always fine-tune before inference: train the randomly initialized classifier head (and optionally top transformer layers).
 - **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
 - **GPU memory**: Be mindful of GPU memory (48 GB). To avoid OOM:
   - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
   - Consider **mixed precision** (fp16/bf16), **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
   - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
   - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
+- When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Separate train/val/test transforms; avoid leakage (fit scalers on train only).  
