@@ -140,7 +140,7 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 30
+_timeout = 60
 trial = 1
 
 algo = pg.evolution.regularized_evolution(
@@ -167,14 +167,14 @@ for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
             torch.cuda.empty_cache()
         gc.collect()
         continue
-    
+
+    success, (score, test_probs) = result
+    feedback(score)
+
     with open('/home/agent/output.txt', 'a') as output_file:
         output_file.write(f"\n=== Trial {trial}===\n")
         output_file.write(f"Validation score: {score:.6f}\n")
         output_file.write(f"Tested parameters: {exp}\n")
-
-    success, (score, test_probs) = result
-    feedback(score)
 
     # Track best
     if best_score is None or score > best_score:

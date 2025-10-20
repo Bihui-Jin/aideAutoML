@@ -1,29 +1,39 @@
-Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures, optimizer/training strategies, and (4) train/evaluate and save a valid submission.
+Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures (including **HuggingFace Transformers**), optimizer/training strategies, and (4) train/evaluate and save a valid submission.
 
 ########### ABSOLUTE REQUIREMENTS ###########
-- Frameworks: Use **PyTorch** for neural nets (run on GPU, `DEVICE` already set). You may instantiate **Mixture-of-Experts (MoE)** components with PyTorch, and optionally use **scikit-learn** for preprocessing and **HuggingFace Transformers** or **timm** as backbones when task-appropriate. All models must be Torch modules trained in this script.
+- Frameworks: Use **PyTorch** (run on GPU via `DEVICE`). You may instantiate **Mixture-of-Experts (MoE)**, use **scikit-learn** for preprocessing, and integrate **HuggingFace Transformers** or **timm** backbones where appropriate. 
 - Search Spaces (PyGlove): Define **all tunable knobs** with `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates).  
   - Do **NOT** pass `default` to `pg.oneof` (not supported).  
   - Every symbolic choice must have concrete candidate values so the script runs immediately (no empty candidate sets).
 - Keep the provided class/method signatures and the outer NAS loop/timeout helper **unchanged**.
 - Decorate `Experiment` with `@pg.symbolize` and fill:
-  - `__init__`: declare symbolic knobs for **data processing**, **model architecture (incl. MoE/Transformer options as appropriate)**, **optimizer**, and **training**.
-  - `data_processing(...)`: implement a **competition-aware** pipeline that uses only task-relevant features; begin with fast iterations (target ~30s sample path switch) and expose a **symbolic data-processing search space** knobs.
-  - `model(...)`: return a **Torch** / **scikit-learn** / **Transformers** model (Random Forest/MLP/CNN/RNN/Transformer/MoE as appropriate). Expose an **architecture search space** (e.g., layer counts, widths, heads, dropout grids, activation) appropriate to the inferred task. Move the model to `DEVICE`.
-  - `_optimizer(...)`: return an optimizer from a **symbolic choice** (Adam/AdamW/SGD/etc.).
-  - `training(...)`: implement a training loop (support optional early stopping via symbolic knobs: enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}).
-  - `evaluation(...)`: compute and return the competition metric (e.g., ROC-AUC for RAOP). Use **higher-is-better** by design; if the metric is “lower-is-better” (e.g., RMSE), return its **negative**.
-  - `run(...)`: build features, split (stratified for classification), train, compute `score`, refit on full data with the same hyperparameters, produce test predictions, and `return (score, test_probs)`.
-- Save a valid **submission** at `submission/submission.csv`. Use the correct columns/format infered from the instruction.
+  - `__init__`: Declare symbolic knobs for **data processing**, **model family**, **optimizer**, and **training**.
+  - `data_processing(...)`: Implement a **competition-aware** pipeline; expose a *symbolic* preprocessing search space. Must support BOTH:
+    1) **Transformer/Text branch** (when task is text): build a tokenizer with `AutoTokenizer.from_pretrained(backbone, use_fast=True, trust_remote_code=True, token=auth_token)` and produce **dict tensors** with keys `input_ids`, `attention_mask`, and include `token_type_ids` when present; **symbolic `max_length ∈ {128, 256, 384}`**.  
+    2) **Classical branch**: TF-IDF/Hashing (+ optional SVD) producing dense features; **symbolic** representation choice, ngram ranges, max_features, and optional SVD dims.
+    Choose branch via a **symbolic knob** (e.g., `pg.oneof(['transformer','tfidf'])`) while still auto-detecting task type from the dataset description.
+  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include BOTH classic and HF options**, e.g. `pg.oneof(['RandomForestClassifier','resnet152','moe','rf','lgbm','distilbert-base-uncased','bert-base-uncased','roberta-base','deberta-v3-base', etc])`.  
+    - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`; expose head dropout, layer-freeze ratio (freeze bottom *k* encoder layers via a knob), and optional activation/dropout on top.  
+    - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
+  - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
+  - `training(...)`: Implement a proper loop with **symbolic** `epochs`, `batch_size` (grid sized for GPU memory, e.g., `{8, 16, 32}` for Transformers; `{64, 128, 256}` for classics), optional **gradient_accumulation_steps ∈ {1,2,4,8}**, **AMP** (`torch.cuda.amp.autocast` + `GradScaler`) and **early stopping** knobs `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}}`.  
+    - **Shape/contracts**:
+      *Classic branch*: batches are `(X, y)` dense tensors.  
+      *Transformer branch*: batches are `({'input_ids','attention_mask', optional 'token_type_ids'}, y)` dicts.  
+    - **OOM Backoff (required)**: If CUDA OOM occurs in a Transformer run, automatically retry once with **smaller `batch_size` and/or smaller `max_length`** (halve batch_size; then reduce max_length to next lower grid value), then continue. Clear cache with `torch.cuda.empty_cache()` between retries/trials.
+  - `evaluation(...)`: Compute and return the **competition metric**. For lower-is-better metrics (e.g., RMSE), return its **negative** value. 
+  - `run(...)`: Build features; split train/valid (stratified for classification). Train, compute `score`, then **refit on full train** with the same hyperparameters (may skip early stop here for speed). Predict test probabilities in the correct order and `return (score, test_probs)`.
+- Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
 ########### COMPETITION-AWARE IMPLEMENTATION ###########
+Select the relevant subset based on task type you infer from the competition text:
 1) **Data Processing Search Space (`data_processing`)** Suggestions
    - For TEXT / NLP / QA / TEXT MATCHING / TOXICITY / SENTIMENT tasks:
      - Augmentations: SubwordRegularization (SentencePiece), symmetric swaps (response_a↔b TTA), Random undersampling for imbalance.
      - Features / preprocessing: rigorous TextCleaning (lowercase, URLs/HTML/punct/emoji/digits, contractions, misspellings), Tokenization (WordPiece/BPE; attention masks), Padding/Truncation, TF-IDF/Count + SVD, NB-SVM log-count ratio, length/structure counts, similarities (cosine/Jaccard/Levenshtein), OneHot/LabelEncoding for categories, distribution alignment if targets bounded.
      - QA specifics: SlidingWindow with doc_stride, span post-cleaning, char-level aggregation via offset_mapping.
-     - Consider symbolic knobs but **not limit to**: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word'])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
+     - Consider symbolic knobs but **not limit to**: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word', etc])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
    - For TABULAR tasks:
      - Imbalance: SMOTE / undersampling; for ensembles use Bootstrapping.
      - Preprocessing: Imputation (mean/median/mode/KNN), Standardization/Robust/MinMax, Log/Power transforms (including target via TransformedTargetRegressor).
@@ -42,7 +52,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
        - Medical/DICOM: VOILUT, HU rescaling, Photometric inversion fix, Center/ROI crop, Padding to aspect, ChannelReplication for 1→3ch, Orientation correction.
        - Gigapixel/volumes: SlidingWindow/Tiling with Overlap blending; Slice stacking or Depth pooling for 2.5D; Resampling-3D.
        - Label format needs: OneHot/MultiLabelBinarization, bbox format conversions; per-class Thresholding / small-object removal.
-     - Consider symbolic knobs but not limited to: simple torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
+     - Consider symbolic knobs but not limited to: complex torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
    - For AUDIO tasks:
      - Augmentations: TimeShift, RandomCrop on spectrograms, NoiseInjection, SilenceTrim, WaveletDenoising, FrequencyFiltering, TTA.
      - Features: MelSpectrogram (+ dB/log), MFCC, spectral stats (centroid/rolloff/ZCR), Fixed-length padding/truncation, Standardization/MinMaxScaling, classic stats aggregation.
@@ -82,8 +92,6 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
    - For SPECIALIZED / OTHER tasks:
      - Consider but **not limit to**: use pg.oneof to select from GeneticAlgorithm (search), CycleGAN (tensorflow image-to-image), KMeans/PCA (as models), k-Means (clustering baseline), etc.
 
-   - Ensure the returned model is moved to `DEVICE`.
-
 3) **Optimizer & Training Search Space** Suggestions
    - `_optimizer`: Consider symbolic knobs but **not limit to**: use pg.oneof to select from Adam, AdamW, RMSprop, SGD, Momentum, Nesterov, Nadam, Adamax, Adagrad, Adadelta, LBFGS, SAGA, SAG, Newton-CG, liblinear, RectifiedAdam, Lookahead, MADGRAD, SLSQP, Nelder-Mead, etc.
    - `training`: implement a mini training loop over `epochs` (e.g., {4,5}) with `batch_size` choices (e.g., {128,256}), criterion choice could be:
@@ -100,20 +108,23 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
    - Predict test set probabilities in correct order.
    - Return `(score, test_probs)`.
 
-########### MEMORY & TRANSFORMERS NOTE ###########
-- **If a Transformer-based model is selected**, be mindful of GPU memory (48 GB). To avoid OOM:
+######################## TRANSFORMER REQUIREMENTS (MANDATORY) ########################
+- **Search space must include HF backbones** in `pg.oneof`, e.g., `'distilbert-base-uncased','bert-base-uncased','roberta-base','deberta-v3-base'`.
+- **Tokenizer pipeline** in `data_processing` for the Transformer branch with **symbolic `max_length ∈ {128,256,384}`**; produce dict batches with `input_ids`, `attention_mask` (+ `token_type_ids` if present).
+- **Model loading**: `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`, then `.to(DEVICE)`.
+- **Training hygiene**: AMP enabled; **batch_size ∈ {8,16,32}**, **gradient_accumulation_steps ∈ {1,2,4,8}**, **AdamW** with LR `{2e-5,3e-5,5e-5}`; expose `weight_decay` and **layer-freeze ratio** knob (freeze bottom *k* encoder layers).
+- **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
+- **GPU memory**: Be mindful of GPU memory (48 GB). To avoid OOM:
   - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
   - Consider **mixed precision** (fp16/bf16), **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
   - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
   - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
-- Make transforms config-driven by task type; separate train/val/test pipelines; gate TTA by task.
-- Standardize normalization paths (ImageNet vs model-specific) and ensure fit leakage control (scalers/imputers fit on train only).
-- Use group-aware CV when entities repeat (patients, breaths, plays, molecules).
-- Centralize post-processing (threshold tuning, rounding to valid grids, WBF for detections).
-- Log data stats and validate shapes after each step (resize/stack/sequence).
-- For NLP, keep tokenizers/versioned vocabs alongside checkpoints; for DICOM, encapsulate VOI/HU/orientation fixes.
+- Separate train/val/test transforms; avoid leakage (fit scalers on train only).  
+- For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  
+- Prefer mixed precision for Transformers; consider activation checkpointing if easily available.  
+- After each trial, free memory: delete optimizers/models/dataloaders, `torch.cuda.empty_cache()`, `gc.collect()`.
 
 Now, FILL IN THE TEMPLATE:
 - Declare all PyGlove knobs in `__init__`.
