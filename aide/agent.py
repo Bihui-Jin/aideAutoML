@@ -321,6 +321,7 @@ class Agent:
                 "Load the HF model outside the pg.sample() for loop to avoid re-downloading it every trial.",
                 "Only use AutoTokenizer/AutoModel when model_family ∈ {'distilbert-base-uncased','bert-base-uncased','roberta-base'}. If model_family ∈ HF set, force rep_branch='transformer'; otherwise force rep_branch='classic'. Never pass non-HF ids ('mlp','moe','logreg') to from_pretrained.",
                 "Ensure encodings have consistent keys across train/val/test (handle missing token_type_ids).",
+                "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
                 "Validate file existence early and fail fast.",
                 "Do not add new prints/logging.",
                 ],

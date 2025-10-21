@@ -144,15 +144,15 @@ _timeout = 60
 trial = 1
 
 algo = pg.evolution.regularized_evolution(
-    population_size=16,
-    tournament_size=3,
+    population_size=64,
+    tournament_size=6,
     seed=42
 )
 
 with open('/home/agent/output.txt', 'w') as output_file:
     output_file.write("Model performance\n")
 # Limit the upper bound of total trial to avoid infinite loop
-for exp, feedback in pg.sample(exp_template, algo, num_examples=100):
+for exp, feedback in pg.sample(exp_template, algo, num_examples=200):
     # Limit to 50 trial
     if trial > 50: 
         break 

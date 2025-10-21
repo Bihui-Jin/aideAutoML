@@ -1,4 +1,4 @@
-Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch**. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures (including **HuggingFace Transformers**), optimizer/training strategies, and (4) train/evaluate and save a valid submission.
+Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch** and can achieve the best competition metric in the task. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures (including **HuggingFace Transformers**), optimizer/training strategies, and (4) train/evaluate and save a valid submission.
 
 ########### ABSOLUTE REQUIREMENTS ###########
 - Frameworks: Use **PyTorch** (run on GPU via `DEVICE`). You may instantiate **Mixture-of-Experts (MoE)**, use **scikit-learn** for preprocessing, and integrate **HuggingFace Transformers** or **timm** backbones where appropriate. 
@@ -12,8 +12,8 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     1) **Transformer/Text branch** (when task is text): build a tokenizer with `AutoTokenizer.from_pretrained(backbone, use_fast=True, trust_remote_code=True, token=auth_token)` and produce **dict tensors** with keys `input_ids`, `attention_mask`, and include `token_type_ids` when present; **symbolic `max_length ∈ {128, 256, 384}`**.  
     2) **Classical branch**: TF-IDF/Hashing (+ optional SVD) producing dense features; **symbolic** representation choice, ngram ranges, max_features, and optional SVD dims.
     Choose branch via a **symbolic knob** (e.g., `pg.oneof(['transformer','tfidf'])`) while still auto-detecting task type from the dataset description.
-  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include BOTH the latest and robust classic and HF options**. Do not use the HF Transformer released before 2020.  
-    - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`; expose head dropout, layer-freeze ratio (freeze bottom *k* encoder layers via a knob), and optional activation/dropout on top.  
+  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include ALL of the latest and robust classic, Deep & Cross Network (DCN), and HF options** (at least 6 options for each). Do not use the HF Transformer released before 2022.  
+    - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`.  
     - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
   - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
   - `training(...)`: Implement a proper loop with **symbolic** `epochs`, `batch_size` (grid sized for GPU memory, e.g., `{8, 16, 32}` for Transformers; `{64, 128, 256}` for classics), optional **gradient_accumulation_steps ∈ {1,2,4,8}**, **AMP** (`torch.cuda.amp.autocast` + `GradScaler`) and **early stopping** knobs `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}}`.  
@@ -69,28 +69,28 @@ Select the relevant subset based on task type you infer from the competition tex
 
 2) **Model Architecture Search Space (model)** Suggestions
    - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
-     - Consider but **not limit to**: use pg.oneof to select from DeBERTa/DeBERTaV3, RemBERT, MuRIL, classical LogReg/SVM/NaiveBayes/RandomForest, SentenceTransformer, LLaMA (base models on Hugging Face), etc.
+     - Consider but **not limit to**: use pg.oneof to select from transformers (DeBERTaV3/RemBERT/MuRIL/SentenceTransformer/LLaMA), RandomForest, LogReg, SVM, NaiveBayes, etc.
 
    - For IMAGE CLASSIFICATION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from EfficientFormer, CNN, MaxViT / MaxxViT, ConvNeXt / ConvNeXtV2, CoAtNet, NFNet, MobileViT, ResNet (18/34/50/101/152),ResNeSt, RexNet, ViT (B/L, /16, /32), DeiT, BiT, Swin-T, EfficientNetV2, classical LogisticRegression, SVM, RandomForest, GradientBoosting, ExtraTrees, XGBoost, LightGBM, CatBoost, MLP, PCA, etc.
+     - Consider but **not limit to**: use pg.oneof to select from transformers (ViT-B/L-16/32, DeiT, Swin-T), hybrid conv-attention models (CoAtNet, MaxViT/MaxxViT, MobileViT, EfficientFormer), modern CNNs (ConvNeXt/ConvNeXtV2, EfficientNetV2, NFNet, ResNet-50/101/152, ResNeSt, BiT, RexNet), MLP, tree ensembles (XGBoost, LightGBM, CatBoost, RandomForest, ExtraTrees), linear baselines (LogisticRegression, SVM), and PCA for dimensionality reduction, etc.
   
    - For TIME SERIES / SEQUENCE  tasks (e.g., tabular, sensors, bio, ventilator, GNSS, EEG):
-     - Consider but **not limit to**: use pg.oneof to select from Autoencoder/Denoising AE, LSTM, GRU, Transformer, CNN, GNN, boosting/trees (LGBM/XGB/CB), Linear/Elastic/Ridge/Lasso, SVR, etc.
+     - Consider but **not limit to**: use pg.oneof to select from transformers (Transformer), sequence RNNs (LSTM/GRU), convolutional (CNN), graph (GNN), autoencoders (Autoencoder/Denoising AE), boosting & tree ensembles (LightGBM/XGBoost/CatBoost), linear models (Linear/ElasticNet/Ridge/Lasso), and kernel methods (SVR), etc.
 
    - For OBJECT DETECTION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from YOLOv5 (ultralytics/yolov5 from torch.hub.load), EfficientDet, DeepLabv3, YOLOS, MobileViT, DETR, etc.
+     - Consider but **not limit to**: use pg.oneof to select from transformer detectors (DETR/YOLOS), one-stage conv detectors (YOLOv5 via torch.hub.load('ultralytics/yolov5'), EfficientDet), mobile backbones (MobileViT), and semantic segmentation (DeepLabv3), etc.
 
    - For RECOMMENDATION / CTR tasks:
-     - Consider but **not limit to**: use pg.oneof to select from ALS, GRU4Rec/LSTM/CNN, gradient boosting, etc.
+     - Consider but **not limit to**: use pg.oneof to select from collaborative filtering (ALS), sequential recommenders (GRU4Rec/LSTM/CNN), and boosted trees for tabular/context features (gradient boosting), etc.
 
    - For AUDIO (spectrogram / waveform) tasks:
-     - Consider but **not limit to**: use pg.oneof to select from CNN, ResNet/18, LSTM/GRU, boosting/trees, etc.
+     - Consider but **not limit to**: use pg.oneof to select from convolutional nets (ResNet-50/101/152/CNN), sequence RNNs (LSTM/GRU), and boosting & tree ensembles, etc.
 
    - For RETRIEVAL/RANKING / METRICS LEARNING tasks:
-     - Consider but **not limit to**: use pg.oneof to select from Siamese Network, TF-IDF + linear/trees stacks, etc.
+     - Consider but **not limit to**: use pg.oneof to select from metric-learning architectures (Siamese Network) and classic text pipelines (TF-IDF + linear/trees stacks), etc.
 
    - For SPECIALIZED / OTHER tasks:
-     - Consider but **not limit to**: use pg.oneof to select from GeneticAlgorithm (search), CycleGAN (tensorflow image-to-image), KMeans/PCA (as models), k-Means (clustering baseline), etc.
+     - Consider but **not limit to**: use pg.oneof to select from unsupervised clustering (k-Means), dimensionality reduction / representation (PCA), image-to-image generative models (CycleGAN, TensorFlow), and search/meta-optimization (GeneticAlgorithm), etc.
 
 3) **Optimizer & Training Search Space** Suggestions
    - `_optimizer`: Consider symbolic knobs but **not limit to**: use pg.oneof to select from Adam, AdamW, RMSprop, SGD, Momentum, Nesterov, Nadam, Adamax, Adagrad, Adadelta, LBFGS, SAGA, SAG, Newton-CG, liblinear, RectifiedAdam, Lookahead, MADGRAD, SLSQP, Nelder-Mead, etc.
@@ -109,7 +109,7 @@ Select the relevant subset based on task type you infer from the competition tex
    - Return `(score, test_probs)`.
 
 ######################## TRANSFORMER REQUIREMENTS (MANDATORY) ########################
-- **Search space must include HF backbones** in `pg.oneof`, e.g., `'LLaMA'`, 'deberta-v3-base'`, etc.
+- **Search space must include robust HF backbones** (released after 2022) in `pg.oneof`, e.g., `'LLaMA3'`, 'deberta-v3-base'`, etc. 
 - **Tokenizer pipeline** in `data_processing` for the Transformer branch with **symbolic `max_length ∈ {128,256,384}`**; produce dict batches with `input_ids`, `attention_mask` (+ `token_type_ids` if present).
 - **Training hygiene**: AMP enabled; **batch_size ∈ {8,16,32}**, **gradient_accumulation_steps ∈ {1,2,4,8}**, **AdamW** with LR `{2e-5,3e-5,5e-5}`; expose `weight_decay` and **layer-freeze ratio** knob (freeze bottom *k* encoder layers).
 - Always fine-tune before inference: train the randomly initialized classifier head (and optionally top transformer layers).
@@ -122,6 +122,7 @@ Select the relevant subset based on task type you infer from the competition tex
 - When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
+- Search space should be large: each pg.oneof should offer at least 10 options.
 - Separate train/val/test transforms; avoid leakage (fit scalers on train only).  
 - For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  
 - Prefer mixed precision for Transformers; consider activation checkpointing if easily available.  
