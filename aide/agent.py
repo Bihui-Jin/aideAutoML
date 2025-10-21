@@ -309,6 +309,7 @@ class Agent:
         prompt["Instructions"] |= {
             "Cautious while coding": [
                 "Use the correct data paths: follow the structure shown in Data Overview.",
+                "While using `pd.read_json` set the correct lines flag based on the detected extension: the file may be a single JSON array so pandas throws that exact ValueError (`lines=True`).",
                 "Keep the submission path exactly submission/submission.csv.",
                 "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
                 "Ensure path handling is consistent (os.path.join with the nested directories).",
