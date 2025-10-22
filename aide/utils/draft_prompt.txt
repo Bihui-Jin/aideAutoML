@@ -12,7 +12,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     1) **Transformer/Text branch** (when task is text): build a tokenizer with `AutoTokenizer.from_pretrained(backbone, use_fast=True, trust_remote_code=True, token=auth_token)` and produce **dict tensors** with keys `input_ids`, `attention_mask`, and include `token_type_ids` when present; **symbolic `max_length ∈ {128, 256, 384}`**.  
     2) **Classical branch**: TF-IDF/Hashing (+ optional SVD) producing dense features; **symbolic** representation choice, ngram ranges, max_features, and optional SVD dims.
     Choose branch via a **symbolic knob** (e.g., `pg.oneof(['transformer','tfidf'])`) while still auto-detecting task type from the dataset description.
-  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include ALL of the latest and robust classic, Deep & Cross Network (DCN), and HF options** (at least 6 options for each). Do not use the HF Transformer released before 2022.  
+  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include ALL of the latest and robust classic, Deep & Cross Network (DCN), and HF options** (at least 6 options for each). Do not use the HF Transformer released before 2023.  
     - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`.  
     - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
   - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
@@ -109,7 +109,7 @@ Select the relevant subset based on task type you infer from the competition tex
    - Return `(score, test_probs)`.
 
 ######################## TRANSFORMER REQUIREMENTS (MANDATORY) ########################
-- **Search space must include robust HF backbones** (released after 2022) in `pg.oneof`, e.g., `'LLaMA3'`, 'deberta-v3-base'`, etc. 
+- **Search space must include robust HF backbones** (released after 2023) in `pg.oneof`. 
 - **Tokenizer pipeline** in `data_processing` for the Transformer branch with **symbolic `max_length ∈ {128,256,384}`**; produce dict batches with `input_ids`, `attention_mask` (+ `token_type_ids` if present).
 - **Training hygiene**: AMP enabled; **batch_size ∈ {8,16,32}**, **gradient_accumulation_steps ∈ {1,2,4,8}**, **AdamW** with LR `{2e-5,3e-5,5e-5}`; expose `weight_decay` and **layer-freeze ratio** knob (freeze bottom *k* encoder layers).
 - Always fine-tune before inference: train the randomly initialized classifier head (and optionally top transformer layers).
@@ -120,6 +120,7 @@ Select the relevant subset based on task type you infer from the competition tex
   - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
   - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
 - When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
+- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`)
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Search space should be large: each pg.oneof should offer at least 10 options.

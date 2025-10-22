@@ -144,8 +144,8 @@ _timeout = 60
 trial = 1
 
 algo = pg.evolution.regularized_evolution(
-    population_size=128,
-    tournament_size=8,
+    population_size=64,
+    tournament_size=6,
     seed=42
 )
 
