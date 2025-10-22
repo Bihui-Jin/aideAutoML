@@ -122,6 +122,7 @@ Select the relevant subset based on task type you infer from the competition tex
   - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
 - When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
 - When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`)
+- When loading any HF checkpoint, ensure the classifier head matches the target classes (e.g., explicitly set num_labels=2 in the config and pass ignore_mismatched_sizes=True). Prefer base checkpoints (not task-specific variants like -mnli) to avoid head size mismatches.
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Search space should be large: each pg.oneof should offer at least 10 options.
