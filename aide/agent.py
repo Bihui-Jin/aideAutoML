@@ -773,6 +773,7 @@ class Agent:
                 "Do not change the overall solution architecture and use PyGlove still.",
                 "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
                 "You **must not** change the model family/architecture search knobs. Instead, only fix the bugs mentioned in the Execution output section.",
+                "Make sure the base model is loaded from the correct directory. For example, the model deberta-v3-base-mnli is from MoritzLaurer not microsoft." if "is not a local folder and is not a valid model identifier listed on" in parent_node.term_out else "",
             ],
             "Search budget & trials": [
                 "Do not add or enforce timeouts; run trials to completion unless an actual error occurs.",
