@@ -444,15 +444,17 @@ class Agent:
         ("Trial" not in output_perf or len([x for x in output_perf.split("\n") if "Trial" in x]) < 7):
             timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
 
+        match = re.search(r'Traceback \(most recent call last\).*', parent_node.term_out, re.DOTALL)
+
         prompt: Any = {
             "Introduction": introduction,
             "Instructions": {},
             # "Task description": self.task_desc,
             "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
-            "Exception error": "".join(parent_node.term_out),
+            "Exception error": wrap_code(match.group(0)) if match else wrap_code(parent_node.term_out),
         }
 
-        logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
+        # logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
         
         
         # Due to timeout issues, we increase the timeout limit here

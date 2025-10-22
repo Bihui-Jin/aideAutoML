@@ -152,10 +152,10 @@ algo = pg.evolution.regularized_evolution(
 with open('/home/agent/output.txt', 'w') as output_file:
     output_file.write("Model performance\n")
 # Limit the upper bound of total trial to avoid infinite loop
-for exp, feedback in pg.sample(exp_template, algo, num_examples=228):
-    # Limit to 50 trial
-    if trial > 50: 
-        break 
+for exp, feedback in pg.sample(exp_template, algo, num_examples=164):
+    # Limit to 60 trial
+    if trial > 60:
+        break
 
     result = run_with_timeout(exp.run, timeout_sec=_timeout)
     

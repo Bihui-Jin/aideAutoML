@@ -111,9 +111,7 @@ Select the relevant subset based on task type you infer from the competition tex
 
 ######################## TRANSFORMER REQUIREMENTS (MANDATORY) ########################
 - **Search space must include robust HF backbones** (released after 2023) in `pg.oneof`. 
-- **Tokenizer pipeline** in `data_processing` for the Transformer branch with **symbolic `max_length ∈ {128,256,384}`**; produce dict batches with `input_ids`, `attention_mask` (+ `token_type_ids` if present).
-- **Training hygiene**: AMP enabled; **batch_size ∈ {8,16,32}**, **gradient_accumulation_steps ∈ {1,2,4,8}**, **AdamW** with LR `{2e-5,3e-5,5e-5}`; expose `weight_decay` and **layer-freeze ratio** knob (freeze bottom *k* encoder layers).
-- Always fine-tune before inference: train the randomly initialized classifier head (and optionally top transformer layers).
+- **Always fine-tune before inference**: train the randomly initialized classifier head (and optionally top transformer layers).
 - **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
 - **GPU memory**: Be mindful of GPU memory (48 GB). To avoid OOM:
   - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
@@ -121,9 +119,11 @@ Select the relevant subset based on task type you infer from the competition tex
   - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
   - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
 - When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
-- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`)
+- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`).
+- When the gte-small model is used, it is from thenlper (i.e., `thenlper/gte-small`). Moreover, no model is called `gte-small-en-v1.5`, it is call `gte-base-en-v1.5` from `Alibaba-NLP`.
 - When loading any HF checkpoint, ensure the classifier head matches the target classes (e.g., explicitly set num_labels=2 in the config and pass ignore_mismatched_sizes=True). Prefer base checkpoints (not task-specific variants like -mnli) to avoid head size mismatches.
 - When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model(**inputs) match the selected backbone's accepted arguments.
+- If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Search space should be large: each pg.oneof should offer at least 10 options.
