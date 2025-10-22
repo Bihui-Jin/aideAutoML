@@ -66,6 +66,7 @@ Select the relevant subset based on task type you infer from the competition tex
      - Augmentations: rotations/flips; JPEG artefact simulation for steganalysis; undersampling negatives (contrails).
      - Features: false-color composites, temporal stacking/aggregation, intensity clipping, heuristic thresholding for masks.
    - Return both features `(X_all, X_test)` (and any IDs if needed inside `run()`), but keep method signature as in the template.
+   - Consider to use bootstrap if beneficial.
 
 2) **Model Architecture Search Space (model)** Suggestions
    - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
