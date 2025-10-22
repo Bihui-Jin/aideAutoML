@@ -449,8 +449,10 @@ class Agent:
             "Instructions": {},
             # "Task description": self.task_desc,
             "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
-            "Exception": wrap_code(parent_node.term_out, lang=""),
+            "Exception": "".join(parent_node.term_out),
         }
+
+        logger.info(f"Parent node term_out:\n{''.join(parent_node.term_out)}")
         
         
         # Due to timeout issues, we increase the timeout limit here

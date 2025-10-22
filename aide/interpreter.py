@@ -452,7 +452,7 @@ class Interpreter:
                 f"Execution time: {humanize.naturaldelta(exec_time)} seconds (time limit is {humanize.naturaldelta(self.timeout)})."
             )
 
-        exec_out= '\n'.join(output)
+        exec_out= ''.join(output)
         logger.info(f"REPL execution output: {exec_out}")
         logger.info(f"REPL execution info: {exc_info}")
         # logger.info(f"REPL execution stack: {exc_stack}")
