@@ -931,8 +931,8 @@ class Agent:
 
 
             if parent_node is not None and parent_node.is_buggy:
-                logger.info(f"result_node term_out1: {''.join(result_node.term_out)}")
-                logger.info(f"result_node term_out2: {''.join(result_node._term_out)}")
+                logger.info(f"result_node term_out1: {result_node.term_out}")
+                logger.info(f"result_node term_out2: {result_node._term_out}")
 
             result_node = self.parse_exec_result(
                 node=result_node,
@@ -940,9 +940,9 @@ class Agent:
             )
 
             if parent_node is not None and parent_node.is_buggy:
-                logger.info(f"result_node term_out3: {''.join(result_node.term_out)}")
-                logger.info(f"result_node term_out4: {''.join(result_node._term_out)}")
-                
+                logger.info(f"result_node term_out3: {result_node.term_out}")
+                logger.info(f"result_node term_out4: {result_node._term_out}")
+
             # handle final cases where we missed buggy nodes somehow
             if not result_node.is_buggy:
                 if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
