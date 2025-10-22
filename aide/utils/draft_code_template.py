@@ -1,4 +1,5 @@
 import os, random, gc
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 import numpy as np
 import pandas as pd
 import torch
@@ -156,33 +157,39 @@ for exp, feedback in pg.sample(exp_template, algo, num_examples=164):
     # Limit to 60 trial
     if trial > 60:
         break
-
-    result = run_with_timeout(exp.run, timeout_sec=_timeout)
     
-    if not result[0]:
-        # Give it a bad score
-        feedback(float('-inf'))
-        # Clean up GPU memory
+    try:
+        result = run_with_timeout(exp.run, timeout_sec=_timeout)
+        
+        if not result[0]:
+            # Give it a bad score
+            feedback(float('-inf'))
+            # Clean up GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            continue
+
+        success, (score, test_probs) = result
+        feedback(score)
+
+        with open('/home/agent/output.txt', 'a') as output_file:
+            output_file.write(f"\n=== Trial {trial}===\n")
+            output_file.write(f"Validation score: {score:.6f}\n")
+            output_file.write(f"Tested parameters: {exp}\n")
+
+        # Track best
+        if best_score is None or score > best_score:
+            best_score = score
+            best_test_probs = test_probs
+            best_exp = exp
+        
+        trial += 1
+    except:
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
         gc.collect()
         continue
-
-    success, (score, test_probs) = result
-    feedback(score)
-
-    with open('/home/agent/output.txt', 'a') as output_file:
-        output_file.write(f"\n=== Trial {trial}===\n")
-        output_file.write(f"Validation score: {score:.6f}\n")
-        output_file.write(f"Tested parameters: {exp}\n")
-
-    # Track best
-    if best_score is None or score > best_score:
-        best_score = score
-        best_test_probs = test_probs
-        best_exp = exp
-    
-    trial += 1
 
 print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")

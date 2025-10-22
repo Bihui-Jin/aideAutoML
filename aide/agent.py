@@ -451,7 +451,7 @@ class Agent:
             "Instructions": {},
             # "Task description": self.task_desc,
             "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
-            "Exception error": wrap_code(match.group(0)) if match else wrap_code(parent_node.term_out),
+            "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
         }
 
         # logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
@@ -460,6 +460,12 @@ class Agent:
         # Due to timeout issues, we increase the timeout limit here
         if "Traceback (most recent call last):" not in parent_node.term_out and parent_node.term_out.count("Trial failed with exception:") <10 and output_perf.count("Trial") < 7:
             prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
+
+        if "Traceback (most recent call last):" in parent_node.term_out and "torch.cuda.OutOfMemoryError:" in parent_node.term_out:
+            prompt["Instructions"] |= {"OOM Handling": """
+- Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
+- Consider **mixed precision** (fp16/bf16/fp8), **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
+- Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles)."""}
 
         prompt["Instructions"] |= self._prompt_resp_fmt
 

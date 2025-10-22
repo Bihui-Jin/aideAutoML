@@ -113,24 +113,23 @@ Select the relevant subset based on task type you infer from the competition tex
 - **Search space must include robust HF backbones** (released after 2023) in `pg.oneof`. 
 - **Always fine-tune before inference**: train the randomly initialized classifier head (and optionally top transformer layers).
 - **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
-- **GPU memory**: Be mindful of GPU memory (48 GB). To avoid OOM:
-  - Favor **smaller `max_length`** and **granular batch size** grids that respect memory.
-  - Consider **mixed precision** (fp16/bf16), **gradient accumulation**, **mixed precision (torch.cuda.amp)**, and **activation checkpointing**.
-  - Consider **chunking**: split the training data into shards/mini-epochs with smaller inputs but more training cycles (symbolic knob controlling shard count or cycles).
-  - When loading HF models/tokenizers, use the authentication key (`auth_token`) in `from_pretrained(...)`.  
-- When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
-- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`).
-- When the gte-small model is used, it is from thenlper (i.e., `thenlper/gte-small`). Moreover, no model is called `gte-small-en-v1.5`, it is call `gte-base-en-v1.5` from `Alibaba-NLP`.
-- When loading any HF checkpoint, ensure the classifier head matches the target classes (e.g., explicitly set num_labels=2 in the config and pass ignore_mismatched_sizes=True). Prefer base checkpoints (not task-specific variants like -mnli) to avoid head size mismatches.
-- When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model(**inputs) match the selected backbone's accepted arguments.
-- If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.
+- **GPU memory**: Be mindful of GPU memory (48 GB). Choose models wisely.  
+
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
 - Search space should be large: each pg.oneof should offer at least 10 options.
 - Separate train/val/test transforms; avoid leakage (fit scalers on train only).  
 - For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  
 - Prefer mixed precision for Transformers; consider activation checkpointing if easily available.  
-- After each trial, free memory: delete optimizers/models/dataloaders, `torch.cuda.empty_cache()`, `gc.collect()`.
+- When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
+- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`).
+- When the gte-small model is used, it is from thenlper (i.e., `thenlper/gte-small`). Moreover, no model is called `gte-small-en-v1.5`, it is call `gte-base-en-v1.5` from `Alibaba-NLP`.
+- When loading any HF checkpoint, ensure the classifier head matches the target classes (e.g., explicitly set num_labels=2 in the config and pass ignore_mismatched_sizes=True). Prefer base checkpoints (not task-specific variants like -mnli) to avoid head size mismatches.
+- When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model(**inputs) match the selected backbone's accepted arguments.
+- If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.
+- Enforce a single data/model branch per trial. If model_family contains HF backbone, force to use TransformerTextDataset + make_transformer_collate, batch_size_transformer, lr_transformer, etc; do not build or consume TF-IDF/Hashing/SVD/scalers, and never use ClassicTensorDataset/classic_collate. If model_family is classic, force to use dense features with ClassicTensorDataset + classic_collate, batch_size_classic, lr_classic, etc; do not instantiate HF tokenizer/model/collate or feed dict-style batches. Insert hard checks: raise if (HF ∧ classic features/collate) or (classic ∧ transformer tokenizer/collate). Maintain consistency across training/validation/test loaders.
+- Diagnose and fix the transformer branch so TransformerDataset never assumes .shape on lists: normalize all tokenizer outputs to NumPy arrays (e.g., {k: np.asarray(v, dtype=np.int64)}) or PyTorch tensors before dataset creation, and compute length with len(encodings["input_ids"]).
+- Ensure the entire classic pipeline produces identical feature dimensions for train and test before SVD: fit the vectorizer(s) and any numeric scaler on train only, transform both sets in the same order, assert X_test.shape[1] == X_train.shape[1] prior to svd.transform, and if not, rebuild X_test using the exact fitted vectorizer(s)/column order (or skip SVD when dims differ).
 
 Now, FILL IN THE TEMPLATE:
 - Declare all PyGlove knobs in `__init__`.
