@@ -452,7 +452,8 @@ class Agent:
             "Exception error": "".join(parent_node.term_out),
         }
 
-        logger.info(f"Parent node term_out:\n{''.join(parent_node.term_out)}")
+        logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
+        logger.info(f"Parent node term_out2:\n{''.join(parent_node._term_out)}")
         
         
         # Due to timeout issues, we increase the timeout limit here
@@ -928,10 +929,20 @@ class Agent:
             else:
                 result_node = self._improve(parent_node)
 
+
+            if parent_node is not None and parent_node.is_buggy:
+                logger.info(f"result_node term_out1: {''.join(result_node.term_out)}")
+                logger.info(f"result_node term_out2: {''.join(result_node._term_out)}")
+
             result_node = self.parse_exec_result(
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
+
+            if parent_node is not None and parent_node.is_buggy:
+                logger.info(f"result_node term_out3: {''.join(result_node.term_out)}")
+                logger.info(f"result_node term_out4: {''.join(result_node._term_out)}")
+                
             # handle final cases where we missed buggy nodes somehow
             if not result_node.is_buggy:
                 if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():

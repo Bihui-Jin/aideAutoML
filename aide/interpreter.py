@@ -453,7 +453,7 @@ class Interpreter:
             )
 
         exec_out= ''.join(output)
-        logger.info(f"REPL execution output: {exec_out}")
+        logger.info(f"REPL execution output: \n{exec_out}")
         logger.info(f"REPL execution info: {exc_info}")
         # logger.info(f"REPL execution stack: {exc_stack}")
         return ExecutionResult(output, exec_time, e_cls_name, exc_info, exc_stack)
