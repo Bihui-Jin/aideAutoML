@@ -218,7 +218,7 @@ def filter_on_path(journal: Journal, path: list[str]) -> Journal:
     journal_copy.nodes = [n for n in journal.nodes if n.id in path]
     # further filter nodes, setting their _term_out and exc_stack to "<OMITTED>"
     for n in journal_copy.nodes:
-        n._term_out = "<OMITTED>"
+        # n._term_out = "<OMITTED>"
         n.exc_stack = "<OMITTED>"
 
     return journal_copy
