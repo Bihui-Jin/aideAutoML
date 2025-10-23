@@ -1,4 +1,5 @@
 # from msilib import text
+from ast import pattern
 from pathlib import Path
 import shutil
 import logging
@@ -123,6 +124,7 @@ class Agent:
         self.initial_code = initial_code
         self.current_solution = None
         self.no_improvement_count = 0  # Add counter for consecutive non-improvements
+        self.valid_improvement_count = 0  # Add counter for valid improvements
 
     def search_policy2(self) -> Node | None:
         """
@@ -286,13 +288,23 @@ class Agent:
             "Introduction": introduction,
             "Task description": match.group(0) if match else self.task_desc,
             "Memory": self.journal.generate_summary(),
-            "Instructions": {},
         }
+        if self.acfg.data_preview:
+            prompt["Data Overview"] = self.data_preview
+
+        with open("/home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
+        prompt["Python Code Template"] = f"""
+```
+{draft_code_template}
+```
+"""
+        
+        prompt["Instructions"] = {}
         prompt["Instructions"] |= self._prompt_resp_fmt
         with open("/home/templates/draft_prompt.txt", "r") as f:
             draft_template = f.read()
         prompt["Instructions"] |= {
-            "Symbolic Model Definition with Pyglove": draft_template,
             "Batching & tensors": [
                 "Ensure all DataLoader batches are torch.Tensors (never Python lists) if DataLoader is used.",
                 "Provide an explicit collate_fn in DataLoader that stacks items (inputs and targets) into tensors.",
@@ -308,10 +320,6 @@ class Agent:
                 "Don't suggest to do EDA.",
                 "The data is already prepared and available in the `./input` directory. There is no need to unzip any files.",
             ],
-        }
-        prompt["Instructions"] |= self._prompt_impl_guideline
-
-        prompt["Instructions"] |= {
             "Cautious while coding": [
                 "Use the correct data paths: follow the structure shown in Data Overview.",
                 "While using `pd.read_json` set the correct lines flag based on the detected extension: the file may be a single JSON array so pandas throws that exact ValueError (`lines=True`).",
@@ -330,21 +338,15 @@ class Agent:
                 "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
                 "Validate file existence early and fail fast.",
                 "Do not add new prints/logging.",
-                ],
+            ],
         }
 
         prompt["Instructions"] |= self._prompt_environment
+        prompt["Instructions"] |= self._prompt_impl_guideline
+        prompt["Instructions"] |= {
+            "Symbolic Model Coding with Pyglove": draft_template,
+        }
 
-        if self.acfg.data_preview:
-            prompt["Data Overview"] = self.data_preview
-
-        with open("/home/templates/draft_code_template.py", "r") as f:
-            draft_code_template = f.read()
-        prompt["Python Code Template"] = f"""
-```
-{draft_code_template}
-```
-"""
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
         # logger.info(f"Drafted code:\n{code}")
@@ -366,11 +368,19 @@ class Agent:
                 "For this you should first outline a brief plan in natural language for how the solution can be improved and "
                 "then implement this improvement in Python based on the provided previous solution. "
             )
+        
+        # Using re.search to find from "COMPETITION INSTRUCTIONS" to the end
+        match = re.search(r'COMPETITION INSTRUCTIONS.*', self.task_desc, re.DOTALL)
+
+        with open("/home/templates/failure_experience.txt", "r") as f:
+            failure_experience = f.read()
+        
+
         prompt: Any = {
             "Introduction": introduction,
-            "Task description": self.task_desc,
+            "Task description": match.group(0) if match else self.task_desc,
             "Memory": self.journal.generate_summary(),
-            "Instructions": {},
+            "Is the score higher the better": "True" if higher_better else "False",
         }
 
         timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
@@ -378,36 +388,42 @@ class Agent:
             "Code": wrap_code(timed_code),
         }
 
-        prompt["Instructions"] |= self._prompt_resp_fmt
-        with open("/home/templates/improve_prompt.txt", "r") as f:
-            improve_prompt = f.read()
+        if "What it has done" in failure_experience:
+            prompt["Failure Experience"] = failure_experience
+            with open("/home/templates/improve_prompt_w_summary.txt", "r") as f:
+                improve_prompt = f.read()
+        else:
+            with open("/home/templates/improve_prompt.txt", "r") as f:
+                improve_prompt = f.read()
+        
+        with open("/home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
+
+        draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
+        prompt["Python Code Template"] = f"""
+```
+{draft_code_template}
+```
+"""
         with open('/home/agent/output.txt', 'r') as output_file:
             output_perf = output_file.read()
+        prompt["Instructions"] = {}
+        prompt["Instructions"] |= self._prompt_resp_fmt
         prompt["Instructions"] |= {
             "Solution requirments": [
                 "The solution sketch should be a brief natural language description of how the previous solution can be improved.",
                 "You should be very specific and should only propose a single actionable improvement.",
                 "This improvement should be atomic so that we can experimentally evaluate the effect of the proposed change.",
                 "Take the Memory section into consideration when proposing the improvement.",
-                f"Keep at least {3 - self.no_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.no_improvement_count < 1 else "",
+                f"Keep at most {5 - self.valid_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.valid_improvement_count <= 4 else "",
                 "The solution sketch should be 3-5 sentences.",
                 "Don't suggest to do EDA.",
             ],
-            "Solution improvement sketch guideline": improve_prompt,
-            "Is the higher the better": "True" if higher_better else "False",
             "Model performance": wrap_code(output_perf, lang=""),
+            "Solution improvement sketch guideline": improve_prompt,
         }
-        prompt["Instructions"] |= self._prompt_impl_guideline
-        with open("/home/templates/draft_code_template.py", "r") as f:
-            draft_code_template = f.read()
 
-        draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
-
-        prompt["Python Code Template"] = f"""
-```
-{draft_code_template}
-```
-"""
+        # prompt["Instructions"] |= self._prompt_impl_guideline
 
         plan, code = self.plan_and_code_query(prompt, qType="_improve")
         new_node = Node(plan=plan, code=code, parent=parent_node)
@@ -450,6 +466,7 @@ class Agent:
         prompt: Any = {
             "Introduction": introduction,
             "Instructions": {},
+            "Is the score higher the better": "True" if higher_better else "False",
             # "Task description": self.task_desc,
             "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
             "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
@@ -891,14 +908,14 @@ class Agent:
             # Update current solution to the new result
             self.current_solution = result_node
             
-            # handle final cases where we missed buggy nodes somehow
-            if not result_node.is_buggy:
-                if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
-                    result_node.is_buggy = True
-                    result_node.metric = WorstMetricValue()
-                    logger.info(
-                        f"Actually, node {result_node.id} did not produce a submission.csv"
-                    )
+            # # handle final cases where we missed buggy nodes somehow
+            # if not result_node.is_buggy:
+            #     if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
+            #         result_node.is_buggy = True
+            #         result_node.metric = WorstMetricValue()
+            #         logger.info(
+            #             f"Actually, node {result_node.id} did not produce a submission.csv"
+            #         )
             self.journal.append(result_node)
 
             # if the result_node is the best node, cache its submission.csv and solution.py
@@ -941,14 +958,37 @@ class Agent:
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
-            # handle final cases where we missed buggy nodes somehow
-            if not result_node.is_buggy:
-                if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
-                    result_node.is_buggy = True
-                    result_node.metric = WorstMetricValue()
-                    logger.info(
-                        f"Actually, node {result_node.id} did not produce a submission.csv"
-                    )
+
+            # Remove future tense from the plan for better logging
+            patterns = [
+                "will ", "'ll ", "'s going to ", "'re going to ", "is going to ", 
+                "are going to ", "'s about to ", "'re about to ", "is about to ", "are about to "
+            ]
+            pattern = '|'.join(re.escape(p) for p in patterns)
+            improve_plan = re.sub(pattern, '', result_node.plan)
+            
+            if higher_better:
+                self.valid_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and result_node.metric > parent_node.metric else 0
+                if parent_node is not None and not parent_node.is_buggy and result_node.metric < parent_node.metric:
+                    with open('/home/agent/failure_experience.txt', 'a') as output_file:
+                        output_file.write(f"- Parent solution achievement: {parent_node.metric}\n")
+                        output_file.write(f"- This solution achieved score: {result_node.metric}\n")
+                        output_file.write(f"- What it has done: \"{improve_plan}\"\n\n")
+            else:
+                self.valid_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and result_node.metric < parent_node.metric else 0
+                if parent_node is not None and not parent_node.is_buggy and result_node.metric > parent_node.metric:
+                    with open('/home/agent/failure_experience.txt', 'a') as output_file:
+                        output_file.write(f"- Parent solution achievement: {parent_node.metric}\n")
+                        output_file.write(f"- This solution achieved score: {result_node.metric}\n")
+                        output_file.write(f"- What it has done: \"{improve_plan}\"\n\n")
+            # # handle final cases where we missed buggy nodes somehow
+            # if not result_node.is_buggy:
+            #     if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
+            #         result_node.is_buggy = True
+            #         result_node.metric = WorstMetricValue()
+            #         logger.info(
+            #             f"Actually, node {result_node.id} did not produce a submission.csv"
+            #         )
             self.journal.append(result_node)
 
             # if the result_node is the best node, cache its submission.csv and solution.py
@@ -972,7 +1012,10 @@ class Agent:
                     # take note of the node id of the best node
                     with open(best_solution_dir / "node_id.txt", "w") as f:
                         f.write(str(result_node.id))
+
                     self.no_improvement_count = 0
+                    with open('/home/agent/failure_experience.txt', 'w') as output_file:
+                        output_file.write("The following experiment summary underperformed its parent solution; use it to learn from mistakes and adjust improvement decisions.\n\n")
                 else:
                     self.no_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and not result_node.is_buggy else 0
                     logger.info(f"Node {result_node.id} is not the best node")
@@ -1174,21 +1217,21 @@ class Agent:
             
             competition = os.getenv("COMPETITION_ID") 
             if competition in compare:
-                maximize_setting = compare[competition]
+                lower_better_setting = compare[competition]
             else:
                 if response["lower_is_better"] is not None:
-                    maximize_setting = not response["lower_is_better"]
-                    compare[competition] = maximize_setting
+                    lower_better_setting = response["lower_is_better"]
+                    compare[competition] = lower_better_setting
 
             global higher_better
-            higher_better = maximize_setting
-            logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {maximize_setting}")
+            higher_better = not lower_better_setting
+            logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {higher_better}")
             
             if isinstance(grade, WorstMetricValue):
                 node.metric = grade
             else:
                 node.metric = MetricValue(
-                    grade, maximize=not maximize_setting
+                    grade, maximize=not lower_better_setting
                 )
 
         return node

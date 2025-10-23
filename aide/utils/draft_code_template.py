@@ -141,7 +141,7 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 60
+_timeout = 120
 trial = 1
 
 algo = pg.evolution.regularized_evolution(
@@ -153,7 +153,7 @@ algo = pg.evolution.regularized_evolution(
 with open('/home/agent/output.txt', 'w') as output_file:
     output_file.write("Model performance\n")
 # Limit the upper bound of total trial to avoid infinite loop
-for exp, feedback in pg.sample(exp_template, algo, num_examples=164):
+for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=164)):
     # Limit to 60 trial
     if trial > 60:
         break
@@ -183,7 +183,7 @@ for exp, feedback in pg.sample(exp_template, algo, num_examples=164):
         best_test_probs = test_probs
         best_exp = exp
     
-    trial += 1
+    trial += 1 if i >= 64 else 0 # Warm-up phase does not count towards trial count
 
 print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")

@@ -63,6 +63,7 @@ def query(
     req_time = time.time() - t0
 
     choice = completion.choices[0]
+    logger.info(f"Model response in {req_time:.2f}s:\n{completion}")
 
     if func_spec is None:
         output = choice.message.content
