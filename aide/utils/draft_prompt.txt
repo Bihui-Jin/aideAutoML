@@ -113,7 +113,7 @@ Select the relevant subset based on task type you infer from the competition tex
 - **Search space must include robust HF backbones** (released after 2023) in `pg.oneof`. 
 - **Always fine-tune before inference**: train the randomly initialized classifier head (and optionally top transformer layers).
 - **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
-- **GPU memory**: Be mindful of GPU memory (48 GB). Choose models wisely.  
+- **GPU memory**: Be mindful of GPU memory (48 GB). Mush choose models wisely to avoid OOM.  
 
 
 ########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
