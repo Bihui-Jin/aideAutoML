@@ -21,7 +21,6 @@ from .utils.config import Config
 from .utils.metric import MetricValue, WorstMetricValue
 from .utils.response import extract_code, extract_text_up_to_code, wrap_code
 
-global higher_better
 logger = logging.getLogger("aide")
 
 def format_time(time_in_sec: int):
@@ -124,6 +123,7 @@ class Agent:
         self.current_step = 0
         self.initial_code = initial_code
         self.current_solution = None
+        self.higher_better = True
         self.no_improvement_count = 0  # Add counter for consecutive non-improvements
         self.valid_improvement_count = 0  # Add counter for valid improvements
 
@@ -381,7 +381,7 @@ class Agent:
             "Introduction": introduction,
             "Task description": match.group(0) if match else self.task_desc,
             "Memory": self.journal.generate_summary(),
-            "Is the score higher the better": "True" if higher_better else "False",
+            "Is the score higher the better": "True" if self.higher_better else "False",
         }
 
         timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
@@ -467,7 +467,7 @@ class Agent:
         prompt: Any = {
             "Introduction": introduction,
             "Instructions": {},
-            "Is the score higher the better": "True" if higher_better else "False",
+            "Is the score higher the better": "True" if self.higher_better else "False",
             # "Task description": self.task_desc,
             "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
             "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
@@ -855,7 +855,7 @@ class Agent:
                 # Create initial node from provided code
                 initial_node = Node(plan=nl_text, code=code)
                 # Execute and evaluate the initial code immediately
-                initial_node, higher_better = self.parse_exec_result(
+                initial_node = self.parse_exec_result(
                             node=initial_node,
                             exec_result=exec_callback(initial_node.code, True),
                         )
@@ -901,7 +901,7 @@ class Agent:
             else:
                 result_node = self._improve(parent_node)
 
-            result_node, higher_better = self.parse_exec_result(
+            result_node = self.parse_exec_result(
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
@@ -955,7 +955,7 @@ class Agent:
             else:
                 result_node = self._improve(parent_node)
 
-            result_node, higher_better = self.parse_exec_result(
+            result_node = self.parse_exec_result(
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
@@ -968,7 +968,7 @@ class Agent:
             pattern = '|'.join(re.escape(p) for p in patterns)
             improve_plan = re.sub(pattern, '', result_node.plan)
             
-            if higher_better:
+            if self.higher_better:
                 self.valid_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and result_node.metric > parent_node.metric else 0
                 if parent_node is not None and not parent_node.is_buggy and result_node.metric < parent_node.metric:
                     with open('/home/agent/failure_experience.txt', 'a') as output_file:
@@ -1193,7 +1193,7 @@ class Agent:
                 compare[competition] = lower_better_setting
 
         
-        higher_better = not lower_better_setting
+        self.higher_better = not lower_better_setting
         
         if node.is_buggy:
             logger.info(
@@ -1227,7 +1227,7 @@ class Agent:
                     logger.warning(f"Invalid JSON in grading response: {res.stdout}")
                     grade = WorstMetricValue()
             
-            logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {higher_better}")
+            logger.info(f"Submission Grading: {grade}, Has csv: {has_csv_submission}, Is maximize: {self.higher_better}")
             
             if isinstance(grade, WorstMetricValue):
                 node.metric = grade
@@ -1236,4 +1236,4 @@ class Agent:
                     grade, maximize=not lower_better_setting
                 )
 
-        return node, higher_better
+        return node

@@ -141,8 +141,8 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 60
-trial = 1
+_timeout = 70
+run, trial = 1, 1
 
 algo = pg.evolution.regularized_evolution(
     population_size=64,
@@ -173,7 +173,7 @@ for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=1
     feedback(score)
 
     with open('/home/agent/output.txt', 'a') as output_file:
-        output_file.write(f"\n=== Trial {trial}===\n")
+        output_file.write(f"\n=== Trial {run}===\n")
         output_file.write(f"Validation score: {score:.6f}\n")
         output_file.write(f"Tested parameters: {exp}\n")
 
@@ -184,6 +184,7 @@ for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=1
         best_exp = exp
     
     score = float('-inf')
+    run += 1
     trial += 1 if i >= 64 else 0 # Warm-up phase does not count towards trial count
 
 print(f"\n=== Search Complete ===")
