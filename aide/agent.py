@@ -955,7 +955,7 @@ class Agent:
             else:
                 result_node = self._improve(parent_node)
 
-            result_node = self.parse_exec_result(
+            result_node, higher_better = self.parse_exec_result(
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
@@ -1236,4 +1236,4 @@ class Agent:
                     grade, maximize=not lower_better_setting
                 )
 
-        return node
+        return node, higher_better
