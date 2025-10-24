@@ -855,7 +855,7 @@ class Agent:
                 # Create initial node from provided code
                 initial_node = Node(plan=nl_text, code=code)
                 # Execute and evaluate the initial code immediately
-                initial_node = self.parse_exec_result(
+                initial_node, higher_better = self.parse_exec_result(
                             node=initial_node,
                             exec_result=exec_callback(initial_node.code, True),
                         )
@@ -898,10 +898,10 @@ class Agent:
             # Determine what action to take based on current solution state
             if parent_node.is_buggy:
                 result_node = self._debug(parent_node)
-            # else:
-            #     result_node = self._improve(parent_node)
+            else:
+                result_node = self._improve(parent_node)
 
-            result_node = self.parse_exec_result(
+            result_node, higher_better = self.parse_exec_result(
                 node=result_node,
                 exec_result=exec_callback(result_node.code, True),
             )
