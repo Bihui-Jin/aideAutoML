@@ -185,7 +185,7 @@ for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=1
     
     score = float('-inf')
     run += 1
-    trial += 1 if i >= 64 else 0 # Warm-up phase does not count towards trial count
+    trial += 1 if i > 64 else 0 # Warm-up phase does not count towards trial count
 
 print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")

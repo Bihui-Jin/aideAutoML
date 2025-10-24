@@ -83,7 +83,9 @@ def query(
             logger.info(e)
             if retries <= max_retries:
                 time.sleep(61)
-    
+
+    logger.info(f"Model anthropic response in {req_time:.2f}s:\n{message}")
+
     if func_spec is None:
         assert len(message.content) == 1 and message.content[0].type == "text"
         output: str = message.content[0].text
