@@ -373,7 +373,7 @@ class Agent:
         # Using re.search to find from "COMPETITION INSTRUCTIONS" to the end
         match = re.search(r'COMPETITION INSTRUCTIONS.*', self.task_desc, re.DOTALL)
 
-        with open("/home/templates/failure_experience.txt", "r") as f:
+        with open("/home/agent/failure_experience.txt", "r") as f:
             failure_experience = f.read()
         
 
