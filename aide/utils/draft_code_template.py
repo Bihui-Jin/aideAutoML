@@ -141,7 +141,7 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 120
+_timeout = 60
 trial = 1
 
 algo = pg.evolution.regularized_evolution(
@@ -183,6 +183,7 @@ for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=1
         best_test_probs = test_probs
         best_exp = exp
     
+    score = float('-inf')
     trial += 1 if i >= 64 else 0 # Warm-up phase does not count towards trial count
 
 print(f"\n=== Search Complete ===")
