@@ -269,7 +269,7 @@ class Agent:
         logger.info("Final plan + code extraction attempt failed, giving up...")
         return "", completion_text  # type: ignore
 
-    def _draft(self) -> Node:
+    def _draft(self, exec_callback: ExecCallbackType) -> Node:
         introduction = (
             "You are a Kaggle grandmaster attending a competition. "
             "In order to win this competition, you need to come up with an excellent and creative plan "
@@ -350,6 +350,8 @@ class Agent:
 
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
+        code = self._static_analysis_fix(code)
+    
         # logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
         logger.info(f"Drafted new node {new_node.id}")
@@ -477,7 +479,7 @@ class Agent:
         
         
         # Due to timeout issues, we increase the timeout limit here
-        if "Traceback (most recent call last):" not in parent_node.term_out and parent_node.term_out.count("Trial failed with exception:") <10 and output_perf.count("Trial") < 7:
+        if "Traceback (most recent call last):" not in parent_node.term_out and output_perf.count("Trial") < 64+7:
             prompt["Instructions"] |= {"Runtime Control": "Consider to add symbolic knobs to downsample the training set per trial (e.g., max_train_samples = pg.oneof(10000, 20000)), and in run() apply a deterministic (random_state) stratified subsample before the hold-out split; keep epochs small and prefer compact features (e.g., cap TF-IDF and use SVD) so each experiment finishes quickly."}
 
         if "Traceback (most recent call last):" in parent_node.term_out and "torch.cuda.OutOfMemoryError:" in parent_node.term_out:
@@ -826,6 +828,118 @@ class Agent:
         # logger.info(f"Debugged code:\n{code}")
         return new_node
 
+    def _static_analysis_fix(self, code: str) -> str:
+        from huggingface_hub import HfApi
+        from huggingface_hub.utils import RepositoryNotFoundError, HfHubHTTPError
+        def check_model_exists(model_id: str, token: str = None) -> bool:
+            """
+            Checks if a specific model exists on Hugging Face Hub.
+
+            Args:
+                model_id: The full model ID (e.g., "thenlper/gte-small").
+                token: Optional authentication token for private models.
+
+            Returns:
+                True if the model exists, False otherwise.
+            """
+            api = HfApi()
+            try:
+                api.model_info(model_id, token=token)
+                return True
+            except RepositoryNotFoundError:
+                return False
+            except HfHubHTTPError as e:
+                return False
+            except Exception as e:
+                return False
+        
+        def extract_hf_models(code: str) -> list[str]:
+            """
+            Extract Hugging Face model names from hf_backbone=pg.oneof([...]) pattern.
+            
+            Args:
+                code: Source code string
+                
+            Returns:
+                List of model names (e.g., ["roberta-base", "thenlper/gte-small"])
+            """
+            # Find the hf_backbone assignment block
+            pattern = r'hf_backbone\s*=\s*pg\.oneof\s*\([^[]*\[(.*?)\]\s*[,)]*\s*\)'
+            match = re.search(pattern, code, re.DOTALL)
+            if not match:
+                return []
+            
+            content = match.group(1)
+            
+            # Remove comments (lines starting with #)
+            lines = content.split('\n')
+            cleaned_lines = [
+                line for line in lines 
+                if not line.strip().startswith('#')
+            ]
+            cleaned_content = '\n'.join(cleaned_lines)
+            
+            # Extract quoted strings
+            model_pattern = r'["\']([A-Za-z0-9_\-\/\.]+)["\']'
+            models = re.findall(model_pattern, cleaned_content)
+            return models
+        
+        model_names = extract_hf_models(code)
+
+        if not model_names:
+            return code
+
+        replacements = {}
+        changes = False
+        for model in model_names:
+            if not check_model_exists(model):
+                # remove orgnization
+                model_id = model.split('/')[-1]
+                # sequential search for model ids
+                api = HfApi()
+                fuzzy_models = list(api.list_models(sort="downloads", search=model_id, limit=1))
+                # choose the default one
+                if fuzzy_models:
+                    new_full_model = fuzzy_models[0].id
+                    replacements[model] = new_full_model
+                    logger.info(f"Model '{model}' not found, replacing with '{new_full_model}'")
+                else:
+                    replacements[model] = '' # no model found
+                    logger.info(f"HF Model '{model}' not found, marking for removal")
+                changes = True
+            else:
+                replacements[model] = model  # Model exists, no change needed
+        
+        if not changes:
+            return code
+
+        # Apply replace-or-remove and rebuild the list inside hf_backbone=pg.oneof([...])
+        if replacements:
+            # Build an ordered, de-duplicated new list.
+            # It processes replacements, handles removals, and avoids adding duplicate models.
+            new_model_list = []
+            for model in model_names:
+                new_model = replacements.get(model, model)
+                # Add the new model if it's not an empty string (for removal)
+                # and not already in the list (to prevent duplicates).
+                if new_model and new_model not in new_model_list:
+                    new_model_list.append(new_model)
+
+            # Format the new list content for injection into the code.
+            # This preserves indentation and quoting.
+            new_list_content = ',\n                '.join([f'"{m}"' for m in new_model_list])
+            
+            # Use regex to replace the entire content between the brackets [] of the hf_backbone assignment.
+            pattern = r'(hf_backbone\s*=\s*pg\.oneof\s*\([^[]*\[\s*).*?(\s*\]\s*[,)]*\s*\))'
+            
+            # The replacement string uses backreferences to keep the surrounding code intact.
+            # It injects the newly formatted list of models.
+            replacement_str = rf'\g<1>\n                {new_list_content}\n            \g<2>'
+            
+            code = re.sub(pattern, replacement_str, code, flags=re.DOTALL)
+            
+        return code
+
     def update_data_preview(
         self,
     ):
@@ -949,7 +1063,7 @@ class Agent:
             logger.info(f"Agent is generating code, parent node type: {type(parent_node)}")
 
             if parent_node is None:
-                result_node = self._draft()
+                result_node = self._draft(exec_callback)
             elif parent_node.is_buggy:
                 result_node = self._debug(parent_node)
             else:

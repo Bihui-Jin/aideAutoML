@@ -51,17 +51,32 @@ def run_with_timeout(func, timeout_sec):
 @pg.symbolize
 class Experiment:
     def __init__(self,
-                 # --- Data processing search knobs ---
+                # --- Data processing search knobs ---
                  
-                 # --- Model search knobs ---
+                # --- Model search knobs ---
+                classic_arch=pg.oneof([ 
+                    # at least 6 the latest and robust options for the classic architectures, e.g., XGBoost, CatBoost, RandomForest, etc.
 
-                 # --- Optimizer search knobs ---
+                    # at least 6 the latest and robust options for Deep & Cross Network (DCN) and MoE based architectures
 
-                 # --- Training/eval knobs ---
+                    # Transformer-based models from hf_backbone
+                    "hf",
+                ]),
+                # Transformer-specific
+                hf_backbone=pg.oneof([ 
+                    # at least 6 the latest and robust options for Hugging Face backbone models released after 2023
+
+                ]),
+                
+                # --- Optimizer search knobs ---
+
+                # --- Training/eval knobs ---
                  
                  ):
         # Assign
         
+        self.hf_backbone = hf_backbone
+        self.classic_arch = classic_arch
 
         # Fitted artifacts
         
@@ -141,7 +156,7 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 70
+_timeout = 120
 run, trial = 1, 1
 
 algo = pg.evolution.regularized_evolution(
