@@ -352,6 +352,26 @@ class Agent:
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
         code = self._static_analysis_fix(code)
     
+
+        logger.info("Drafted code starts the smoke test")
+        def smoke_test(code: str) -> bool:
+            """A simple smoke test using sample dataset to reveal shallow bugs."""
+            exec_result=exec_callback(code, True)
+            if exec_result.exc_info:
+                return False, exec_result
+            return True, exec_result
+        
+        while True:
+            passed, exec_result = smoke_test(code)
+            if passed:
+                break
+            logger.info("Drafted code failed smoke test, re-drafting...")
+            node = Node(plan=plan, code=code)
+            node.absorb_exec_result(exec_result)
+
+            debugged_node = self._debug(node)
+            code = debugged_node.code
+            
         # logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
         logger.info(f"Drafted new node {new_node.id}")

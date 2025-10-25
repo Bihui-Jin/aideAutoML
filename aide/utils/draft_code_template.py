@@ -145,6 +145,8 @@ class Experiment:
         # Return both validation score and test predictions
         return 
 
+def smoke_test():
+
 # ----------------------------
 # Main Execution Code Chunk (kept from the origin)
 # Instantiate a compact search space (kept from the template)
@@ -158,54 +160,58 @@ best_test_probs = None
 auth_token = os.getenv("HUGGINGFACE_KEY")
 _timeout = 120
 run, trial = 1, 1
+def full_search():
+    algo = pg.evolution.regularized_evolution(
+        population_size=64,
+        tournament_size=6,
+        seed=42
+    )
 
-algo = pg.evolution.regularized_evolution(
-    population_size=64,
-    tournament_size=6,
-    seed=42
-)
+    with open('/home/agent/output.txt', 'w') as output_file:
+        output_file.write("Model performance\n")
+    # Limit the upper bound of total trial to avoid infinite loop
+    for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=164)):
+        # Limit to 60 trial
+        if trial > 60:
+            break
+        
+        result = run_with_timeout(exp.run, timeout_sec=_timeout)
+        
+        if not result[0]:
+            # Give it a bad score
+            feedback(float('-inf'))
+            # Clean up GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+            continue
 
-with open('/home/agent/output.txt', 'w') as output_file:
-    output_file.write("Model performance\n")
-# Limit the upper bound of total trial to avoid infinite loop
-for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=164)):
-    # Limit to 60 trial
-    if trial > 60:
-        break
-    
-    result = run_with_timeout(exp.run, timeout_sec=_timeout)
-    
-    if not result[0]:
-        # Give it a bad score
-        feedback(float('-inf'))
-        # Clean up GPU memory
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        continue
+        success, (score, test_probs) = result
+        feedback(score)
 
-    success, (score, test_probs) = result
-    feedback(score)
+        with open('/home/agent/output.txt', 'a') as output_file:
+            output_file.write(f"\n=== Trial {run}===\n")
+            output_file.write(f"Validation score: {score:.6f}\n")
+            output_file.write(f"Tested parameters: {exp}\n")
 
-    with open('/home/agent/output.txt', 'a') as output_file:
-        output_file.write(f"\n=== Trial {run}===\n")
-        output_file.write(f"Validation score: {score:.6f}\n")
-        output_file.write(f"Tested parameters: {exp}\n")
+        # Track best
+        if best_score is None or score > best_score:
+            best_score = score
+            best_test_probs = test_probs
+            best_exp = exp
+        
+        score = float('-inf')
+        run += 1
+        trial += 1 if i > 64 else 0 # Warm-up phase does not count towards trial count
 
-    # Track best
-    if best_score is None or score > best_score:
-        best_score = score
-        best_test_probs = test_probs
-        best_exp = exp
-    
-    score = float('-inf')
-    run += 1
-    trial += 1 if i > 64 else 0 # Warm-up phase does not count towards trial count
+    print(f"\n=== Search Complete ===")
+    print(f"Best Validation Score: {best_score:.6f}")
+    print(f"Best Parameters: {best_exp}")
 
-print(f"\n=== Search Complete ===")
-print(f"Best Validation Score: {best_score:.6f}")
-print(f"Best Parameters: {best_exp}")
+    return best_test_probs
 
+smoke_test()
+full_search()
 # ----------------------------
 # Finished
 # Do not modify above this line
