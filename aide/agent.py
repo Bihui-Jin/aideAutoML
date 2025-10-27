@@ -966,6 +966,7 @@ class Agent:
         - Keep using existing evaluator (`parse_exec_result`), debug (`_debug`) and
           improve (`_improve`) helpers from this class so core features remain.
         """
+        global main_exec_code_template
         # clear the submission dir from previous steps
         shutil.rmtree(self.cfg.workspace_dir / "submission", ignore_errors=True)
         (self.cfg.workspace_dir / "submission").mkdir(exist_ok=True)
