@@ -352,7 +352,7 @@ class Agent:
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
         code = self._static_analysis_fix(code)
-        logger.info(f"_static_analysis_fix code:\n{code}")
+        # logger.info(f"_static_analysis_fix code:\n{code}")
             
         # logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
@@ -474,6 +474,7 @@ class Agent:
             buggy_code = wrap_code(parent_node.code) if self.run_smoke_test else wrap_code(re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', parent_node.code))
         else: buggy_code = wrap_code(timed_code) if self.run_smoke_test else wrap_code(re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code))
 
+        global main_exec_code_template
         if not self.run_smoke_test:
             main_exec_code_template = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', main_exec_code_template)
         else:

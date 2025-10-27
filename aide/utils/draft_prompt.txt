@@ -110,6 +110,7 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
    - Run matrix: Execute:
      - Exactly one HF trial using the first candidate from `hf_backbone` (respecting the tokenizer/model path and collate for dict-inputs).
      - All classic arches (i.e., iterate through every non-"hf" option listed in `classic_arch`) with the classic/dense pipeline and collate.
+     - Use `pg.geno.Random()` to select Experiment while creating but each architecture option should only be run once.
    - Transformer family smoke test:
      - Construct a minimal Experiment with:
        - `classic_arch='hf'`,
@@ -133,6 +134,7 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
      - epochs = 1, batch_size minimal (e.g., 8 for HF, 64 for classic).
      - AMP on, gradient accumulation = 1.
      - No early stopping.
+     - Make sure each architecture option is only run once
 
 5) **run()**
    - Build features.
