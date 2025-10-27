@@ -145,6 +145,7 @@ class Experiment:
         # Return both validation score and test predictions
         return 
 
+exp_template = Experiment()
 def smoke_test():
 
 # ----------------------------
@@ -154,6 +155,7 @@ def smoke_test():
 # ----------------------------
 exp_template = Experiment()
 
+run_smoke_test = True
 best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
@@ -208,9 +210,8 @@ def full_search():
     print(f"Best Validation Score: {best_score:.6f}")
     print(f"Best Parameters: {best_exp}")
 
-    return best_test_probs
-
-smoke_test()
+if run_smoke_test:
+    smoke_test()
 full_search()
 # ----------------------------
 # Finished

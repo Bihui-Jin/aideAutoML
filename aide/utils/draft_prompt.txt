@@ -23,6 +23,10 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     - **OOM Backoff (required)**: If CUDA OOM occurs in a Transformer run, automatically retry once with **smaller `batch_size` and/or smaller `max_length`** (halve batch_size; then reduce max_length to next lower grid value), then continue. Clear cache with `torch.cuda.empty_cache()` between retries/trials.
   - `evaluation(...)`: Compute and return the **competition metric**. For lower-is-better metrics (e.g., RMSE), return its **negative** value. 
   - `run(...)`: Build features; split train/valid (stratified for classification). Train, compute `score`, then **refit on full train** with the same hyperparameters (may skip early stop here for speed). Predict test probabilities in the correct order and `return (score, test_probs)`.
+- Explicit Knob Declarations (force concrete candidate lists): You MUST declare the following search-space candidates exactly as listed below:
+  - classic_arch is to list all kinds of classic architectures, e.g., mlp, RandomForest, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
+  - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct and Alibaba-NLP/gte-base-en-v1.5.
+- `smoke_test()` is the simple version of `full_search()`.
 - Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
@@ -101,7 +105,36 @@ Select the relevant subset based on task type you infer from the competition tex
      - Regression: `MSELoss` (report negative RMSE as score for “higher-is-better” convention).
    - Optional early stopping knobs: `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0,1e-4}}`. If enabled, monitor validation metric and restore best weights.
 
-4) **run()**
+4) **smoke_test()** requirements (fast, minimal sanity run)
+You MUST implement smoke_test() to run **two ultra-short** trials-one per family—to catch shallow bugs quickly without altering the main NAS loop:
+   - Run matrix: Execute:
+     - Exactly one HF trial using the first candidate from `hf_backbone` (respecting the tokenizer/model path and collate for dict-inputs).
+     - All classic arches (i.e., iterate through every non-"hf" option listed in `classic_arch`) with the classic/dense pipeline and collate.
+   - Transformer family smoke test:
+     - Construct a minimal Experiment with:
+       - `classic_arch='hf'`,
+       - `hf_backbone=pg.oneof([...])` but **force one** concrete pick for the smoke test (e.g., the first in the `hf_backbone` list),
+       - max_length=128, batch_size_transformer=8, epochs=1, gradient_accumulation_steps=1, Automatic Mixed Precision (torch.amp) enabled, early stopping disabled.
+     - Create a **tiny** sample dataset (e.g., take only the first 8 rows of train, 2 rows of valid, and 2 rows of test or synthesize two short strings with binary labels if the competition files are missing).
+     - Run end-to-end: data_processing → model → training → evaluation → run() and assert:
+       - The forward pass completes on DEVICE.
+       - Output logits/probabilities have expected shapes.
+       - Do **not** save submission CSV for the smoke test.
+   - Classic family smoke test:
+     - Construct a minimal Experiment with each one in classic_arch:
+       - `classic_arch='dcn2'`,
+       - A classic text/tabular preprocessing setting (e.g., 'tfidf_word' with a tiny max_features=1024 and SVD on),
+       - batch_size_classic=64, epochs=1, early stopping disabled.
+     - Use the same tiny sample dataset protocol (first few rows).
+     - Run end-to-end with the same assertions as above.
+   - General smoke-test rules:
+     - Do not print; Do not save submission CSV; reuse the existing run_with_timeout.
+     - Ensure both branches return (score, test_probs).
+     - epochs = 1, batch_size minimal (e.g., 8 for HF, 64 for classic).
+     - AMP on, gradient accumulation = 1.
+     - No early stopping.
+
+5) **run()**
    - Build features.
    - Stratified (if classification) hold-out split (`valid_size=0.2`) for quick feedback.
    - Train and compute validation metric via `evaluation`.

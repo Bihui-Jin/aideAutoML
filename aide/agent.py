@@ -126,6 +126,7 @@ class Agent:
         self.higher_better = True
         self.no_improvement_count = 0  # Add counter for consecutive non-improvements
         self.valid_improvement_count = 0  # Add counter for valid improvements
+        self.run_smoke_test = True
 
     def search_policy2(self) -> Node | None:
         """
@@ -269,7 +270,7 @@ class Agent:
         logger.info("Final plan + code extraction attempt failed, giving up...")
         return "", completion_text  # type: ignore
 
-    def _draft(self, exec_callback: ExecCallbackType) -> Node:
+    def _draft(self) -> Node:
         introduction = (
             "You are a Kaggle grandmaster attending a competition. "
             "In order to win this competition, you need to come up with an excellent and creative plan "
@@ -351,26 +352,7 @@ class Agent:
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
         code = self._static_analysis_fix(code)
-    
-
-        logger.info("Drafted code starts the smoke test")
-        def smoke_test(code: str) -> bool:
-            """A simple smoke test using sample dataset to reveal shallow bugs."""
-            exec_result=exec_callback(code, True)
-            if exec_result.exc_info:
-                return False, exec_result
-            return True, exec_result
-        
-        while True:
-            passed, exec_result = smoke_test(code)
-            if passed:
-                break
-            logger.info("Drafted code failed smoke test, re-drafting...")
-            node = Node(plan=plan, code=code)
-            node.absorb_exec_result(exec_result)
-
-            debugged_node = self._debug(node)
-            code = debugged_node.code
+        logger.info(f"_static_analysis_fix code:\n{code}")
             
         # logger.info(f"Drafted code:\n{code}")
         new_node = Node(plan=plan, code=code)
@@ -407,6 +389,7 @@ class Agent:
         }
 
         timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
+        timed_code = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code)
         prompt["Previous solution"] = {
             "Code": wrap_code(timed_code),
         }
@@ -423,6 +406,7 @@ class Agent:
             draft_code_template = f.read()
 
         draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
+        draft_code_template = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', draft_code_template)
         prompt["Python Code Template"] = f"""
 ```
 {draft_code_template}
@@ -486,12 +470,21 @@ class Agent:
 
         match = re.search(r'Traceback \(most recent call last\).*', parent_node.term_out, re.DOTALL)
 
+        if timed_code is None:
+            buggy_code = wrap_code(parent_node.code) if self.run_smoke_test else wrap_code(re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', parent_node.code))
+        else: buggy_code = wrap_code(timed_code) if self.run_smoke_test else wrap_code(re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code))
+
+        if not self.run_smoke_test:
+            main_exec_code_template = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', main_exec_code_template)
+        else:
+            main_exec_code_template = re.sub(r'run_smoke_test\s*=\s*False', 'run_smoke_test = True', main_exec_code_template)
+
         prompt: Any = {
             "Introduction": introduction,
             "Instructions": {},
             "Is the score higher the better": "True" if self.higher_better else "False",
             # "Task description": self.task_desc,
-            "Previous buggy code": wrap_code(parent_node.code) if timed_code is None else wrap_code(timed_code),
+            "Previous buggy code": buggy_code,
             "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
         }
 
@@ -1083,11 +1076,16 @@ class Agent:
             logger.info(f"Agent is generating code, parent node type: {type(parent_node)}")
 
             if parent_node is None:
-                result_node = self._draft(exec_callback)
+                main_exec_code_template = re.sub(r'run_smoke_test\s*=\s*False', 'run_smoke_test = True', main_exec_code_template)
+                result_node = self._draft()
+                self.run_smoke_test = True
             elif parent_node.is_buggy:
                 result_node = self._debug(parent_node)
             else:
                 result_node = self._improve(parent_node)
+                self.run_smoke_test = False
+
+            logger.info(f"Agent generated code:\n{result_node.code}")
 
             result_node = self.parse_exec_result(
                 node=result_node,
