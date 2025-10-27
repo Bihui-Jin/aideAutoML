@@ -1091,7 +1091,7 @@ class Agent:
                 result_node = self._improve(parent_node)
                 self.run_smoke_test = False
 
-            logger.info(f"Agent generated code:\n{result_node.code}")
+            # logger.info(f"Agent generated code:\n{result_node.code}")
 
             result_node = self.parse_exec_result(
                 node=result_node,
