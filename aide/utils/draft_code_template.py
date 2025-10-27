@@ -162,7 +162,9 @@ best_test_probs = None
 auth_token = os.getenv("HUGGINGFACE_KEY")
 _timeout = 120
 run, trial = 1, 1
+
 def full_search():
+    global run, trial, best_score, best_exp, best_test_probs, _timeout
     algo = pg.evolution.regularized_evolution(
         population_size=64,
         tournament_size=6,
@@ -176,6 +178,9 @@ def full_search():
         # Limit to 60 trial
         if trial > 60:
             break
+
+        with open('/home/agent/running.txt', 'w') as running_exp:
+            running_exp.write(exp)
         
         result = run_with_timeout(exp.run, timeout_sec=_timeout)
         

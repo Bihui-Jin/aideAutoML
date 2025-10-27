@@ -26,7 +26,6 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 - Explicit Knob Declarations (force concrete candidate lists): You MUST declare the following search-space candidates exactly as listed below:
   - classic_arch is to list all kinds of classic architectures, e.g., mlp, RandomForest, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
   - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct and Alibaba-NLP/gte-base-en-v1.5.
-- `smoke_test()` is the simple version of `full_search()`.
 - Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
@@ -110,7 +109,8 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
    - Run matrix: Execute:
      - Exactly one HF trial using the first candidate from `hf_backbone` (respecting the tokenizer/model path and collate for dict-inputs).
      - All classic arches (i.e., iterate through every non-"hf" option listed in `classic_arch`) with the classic/dense pipeline and collate.
-     - Use `pg.geno.Random()` to select Experiment while creating but each architecture option should only be run once.
+     - Always instantiate `Experiment` by setting every declared knob declared in `__init__` in a single constructor call, choosing one valid option for each pg.oneof/manyof/floatv knob; knobs should be consistent for either the HF or classic branch.
+     - Reuse the existing run_with_timeout.
    - Transformer family smoke test:
      - Construct a minimal Experiment with:
        - `classic_arch='hf'`,
@@ -129,6 +129,8 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
      - Use the same tiny sample dataset protocol (first few rows).
      - Run end-to-end with the same assertions as above.
    - General smoke-test rules:
+     - With PyGlove `.rebind()`, a symbolic object can be manipluated into another object without modifying existing code; rebind(x, dict) is used to replace each node in x whose path is a key in dict, e.g., experiment.rebind({'classic_arch':'mlp'}) setting self.classic_arch='mlp'.
+     - Use `.clone()` before using `.rebind`, e.g., `exp1 = Experiment().clone().rebind(...)`, to ensure no effect to the main branch.
      - Do not print; Do not save submission CSV; reuse the existing run_with_timeout.
      - Ensure both branches return (score, test_probs).
      - epochs = 1, batch_size minimal (e.g., 8 for HF, 64 for classic).
