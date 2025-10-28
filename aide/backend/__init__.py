@@ -64,8 +64,8 @@ def query(
     user_message = compile_prompt_to_md(user_message) if user_message else None
     if user_message:
         logger.info(f"user: {user_message}", extra={"verbose": True})
-    if func_spec:
-        logger.info(f"function spec: {func_spec.to_dict()}", extra={"verbose": True})
+    # if func_spec:
+    #     logger.info(f"function spec: {func_spec.to_dict()}", extra={"verbose": True})
 
     provider = determine_provider(model)
     query_func = provider_to_query_func[provider]
