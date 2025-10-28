@@ -180,7 +180,7 @@ def full_search():
             break
 
         with open('/home/agent/running.txt', 'w') as running_exp:
-            running_exp.write(exp)
+            running_exp.write(f"{exp}")
         
         result = run_with_timeout(exp.run, timeout_sec=_timeout)
         
