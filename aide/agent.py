@@ -128,16 +128,11 @@ class Agent:
         self.valid_improvement_count = 0  # Add counter for valid improvements
         self.run_smoke_test = True
 
-    def search_policy2(self) -> Node | None:
-        """
-        Modified to return current solution instead of tree search.
-        """
-        return self.current_solution
-    
     def search_policy(self) -> Node | None:
         """Select a node to work on (or None to draft a new node)."""
         search_cfg = self.acfg.search
-
+        logger.info(f"[search policy] considering debugging max {search_cfg.max_debug_depth} times")
+    
         # initial drafting
         if len(self.journal.draft_nodes) < search_cfg.num_drafts:
             logger.info("[search policy] drafting new node (not enough drafts)")
@@ -146,13 +141,11 @@ class Agent:
         # debugging
         if random.random() < search_cfg.debug_prob:
             # nodes that are buggy + leaf nodes + debug depth < max debug depth
-            logger.info(f"[search policy] considering debugging max {search_cfg.max_debug_depth} times")
             debuggable_nodes = [
                 n
                 for n in self.journal.buggy_nodes
                 if (n.is_leaf and n.debug_depth <= search_cfg.max_debug_depth)
             ]
-            return None
             if debuggable_nodes:
                 node_to_debug = random.choice(debuggable_nodes)
                 logger.info(f"[search policy] debugging node {node_to_debug.id}")
@@ -1080,6 +1073,7 @@ class Agent:
             self.current_step += 1
         else:
             parent_node = self.search_policy()
+            return None
             logger.info(f"Agent is generating code, parent node type: {type(parent_node)}")
 
             if parent_node is None:
