@@ -1355,7 +1355,10 @@ class Agent:
                     if grade is None or not isinstance(grade, (float)):
                         grade = WorstMetricValue()
                     else:
-                        grade = float(grade)
+                        if self.higher_better and grade==0.0:
+                            grade = WorstMetricValue()
+                        else:
+                            grade = float(grade)
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON in grading response: {res.stdout}")
                     grade = WorstMetricValue()
