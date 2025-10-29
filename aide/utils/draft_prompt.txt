@@ -159,8 +159,6 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
 - For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  
 - Prefer mixed precision for Transformers; consider activation checkpointing if easily available.  
 - When using AutoModelForSequenceClassification with a fresh head; treat it as info, not an error.
-- When any DeBERTa-v3-base-mnli series model is used, it is from MoritzLaurer (i.e., `MoritzLaurer/DeBERTa-v3-base-mnli`).
-- When the gte-small model is used, it is from thenlper (i.e., `thenlper/gte-small`). Moreover, no model is called `gte-small-en-v1.5`, it is call `gte-base-en-v1.5` from `Alibaba-NLP`.
 - When loading any HF checkpoint, ensure the classifier head matches the target classes (e.g., explicitly set num_labels=2 in the config and pass ignore_mismatched_sizes=True). Prefer base checkpoints (not task-specific variants like -mnli) to avoid head size mismatches.
 - When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model(**inputs) match the selected backbone's accepted arguments.
 - If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.

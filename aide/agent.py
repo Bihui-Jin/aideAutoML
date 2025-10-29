@@ -317,6 +317,18 @@ class Agent:
                 "Don't suggest to do EDA.",
                 "The data is already prepared and available in the `./input` directory. There is no need to unzip any files.",
             ],
+            "PyGlove symbolic knobs": [
+                "Never hardcode TruncatedSVD n_components. Compute n_feats after vectorization and set n_components = min(requested, n_feats - 1). If n_feats <= 1, skip SVD cleanly.",
+                "Do NOT store an optimizer in self._optimizer. Implement a method build_optimizer(model) that returns a fresh optimizer bound to the provided model. Inside training(), create the optimizer with build_optimizer(self.model_) after self.model_ is set. Whenever a new model instance is created (e.g., final train on all data), recreate the optimizer for that new model.",
+                "Avoid name collisions: keep the factory as build_optimizer(...) (a method), never as an attribute named _optimizer. Do not call self._optimizer() unless it is a method; prefer build_optimizer(self.model_).",
+                "If model is from 'huggingface', force rep_branch = 'transformer' (or convert pipelines) so HF models never train on classic TF-IDF features. Conversely, if rep_branch == 'transformer' but a classic model is selected, switch model_family to a classic head automatically.",
+                "Provide robust collate_fns: transformer_collate must accept batches of dicts; classic_collate must accept tensors. Never pass ClassicDataset batches to transformer_collate. Select the collate_fn based on the actual dataset type, not just flags. Ensure all batch items are torch.Tensors on device; after collation it must be valid to call .to(device) on inputs/targets.",
+                "Load the HF model outside the pg.sample() for loop to avoid re-downloading it every trial.",
+                "Only use AutoTokenizer/AutoModel when model_family ∈ {'distilbert-base-uncased','bert-base-uncased','roberta-base'}. If model_family ∈ HF set, force rep_branch='transformer'; otherwise force rep_branch='classic'. Never pass non-HF ids ('mlp','moe','logreg') to from_pretrained.",
+                "Ensure encodings have consistent keys across train/val/test (handle missing token_type_ids).",
+                "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
+                "**Before using any config knob, guarantee it's declared in the symbolic class and bound with a default; in code, read with getattr(self, 'classic_arch', False) (or similar) instead of direct access, and ensure clone()/rebind() preserves defaults so no attribute access can raise AttributeError.**",
+            ],
             "Cautious while coding": [
                 "Use the correct data paths: follow the structure shown in Data Overview.",
                 "While using `pd.read_json` set the correct lines flag based on the detected extension: the file may be a single JSON array so pandas throws that exact ValueError (`lines=True`).",
@@ -324,15 +336,6 @@ class Agent:
                 "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
                 "Ensure path handling is consistent (os.path.join with the nested directories).",
                 "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
-                "Never hardcode TruncatedSVD n_components. Compute n_feats after vectorization and set n_components = min(requested, n_feats - 1). If n_feats <= 1, skip SVD cleanly.",
-                "Do NOT store an optimizer in self._optimizer. Implement a method build_optimizer(model) that returns a fresh optimizer bound to the provided model. Inside training(), create the optimizer with build_optimizer(self.model_) after self.model_ is set. Whenever a new model instance is created (e.g., final train on all data), recreate the optimizer for that new model.",
-                "Avoid name collisions: keep the factory as build_optimizer(...) (a method), never as an attribute named _optimizer. Do not call self._optimizer() unless it is a method; prefer build_optimizer(self.model_).",
-                "If model_family uses 'huggingface', force rep_branch = 'transformer' (or convert pipelines) so HF models never train on classic TF-IDF features. Conversely, if rep_branch == 'transformer' but a classic model is selected, switch model_family to a classic head automatically.",
-                "Provide robust collate_fns: transformer_collate must accept batches of dicts; classic_collate must accept tensors. Never pass ClassicDataset batches to transformer_collate. Select the collate_fn based on the actual dataset type, not just flags. Ensure all batch items are torch.Tensors on device; after collation it must be valid to call .to(device) on inputs/targets.",
-                "Load the HF model outside the pg.sample() for loop to avoid re-downloading it every trial.",
-                "Only use AutoTokenizer/AutoModel when model_family ∈ {'distilbert-base-uncased','bert-base-uncased','roberta-base'}. If model_family ∈ HF set, force rep_branch='transformer'; otherwise force rep_branch='classic'. Never pass non-HF ids ('mlp','moe','logreg') to from_pretrained.",
-                "Ensure encodings have consistent keys across train/val/test (handle missing token_type_ids).",
-                "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
                 "Validate file existence early and fail fast.",
                 "Do not add new prints/logging.",
             ],
@@ -340,9 +343,7 @@ class Agent:
 
         prompt["Instructions"] |= self._prompt_environment
         prompt["Instructions"] |= self._prompt_impl_guideline
-        prompt["Instructions"] |= {
-            "Symbolic Model Coding with Pyglove": draft_template,
-        }
+        prompt["Symbolic Model Coding with Pyglove"] = draft_template
 
 
         plan, code = self.plan_and_code_query(prompt, qType="_draft")
