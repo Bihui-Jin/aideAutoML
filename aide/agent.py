@@ -483,10 +483,10 @@ class Agent:
             "Previous buggy code": buggy_code,
             "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
         }
-
-        with open('/home/agent/running.txt', 'r') as f:
-            running_exp = f.read()
-        prompt["Search configuration (PyGlove)"] = f"Exception caused by the knob configuration below.\n"+wrap_code(running_exp, lang="")
+        if os.path.exists('/home/agent/running.txt'):
+            with open('/home/agent/running.txt', 'r') as f:
+                running_exp = f.read()
+            prompt["Search configuration (PyGlove)"] = f"Exception caused by the knob configuration below.\n"+wrap_code(running_exp, lang="")
 
         # logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
         
