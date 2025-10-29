@@ -878,7 +878,7 @@ class Agent:
             """
             # Find the hf_backbone assignment block
             pattern = r'hf_backbone\s*=\s*pg\.oneof\s*\([^[]*\[(.*?)\]\s*[,)]*\s*\)'
-            match = re.search(pattern, code, re.DOTALL)
+            match = re.search(pattern, code, re.DOTALL | re.IGNORECASE)
             if not match:
                 return []
             
