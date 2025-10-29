@@ -131,7 +131,6 @@ class Agent:
     def search_policy(self) -> Node | None:
         """Select a node to work on (or None to draft a new node)."""
         search_cfg = self.acfg.search
-        logger.info(f"[search policy] considering debugging max {search_cfg.max_debug_depth} times")
     
         # initial drafting
         if len(self.journal.draft_nodes) < search_cfg.num_drafts:
@@ -148,8 +147,10 @@ class Agent:
             ]
             if debuggable_nodes:
                 node_to_debug = random.choice(debuggable_nodes)
-                logger.info(f"[search policy] debugging node {node_to_debug.id}")
+                logger.info(f"[search policy] debugging node {node_to_debug.id} (debug_depth: {node_to_debug.debug_depth})")
                 return node_to_debug
+            else:
+                logger.info(f"[search policy] no debuggable nodes found (all exceed max_debug_depth={search_cfg.max_debug_depth})")
         # back to drafting if no nodes to improve
         good_nodes = self.journal.good_nodes
         if not good_nodes:
@@ -371,43 +372,13 @@ class Agent:
         # Using re.search to find from "COMPETITION INSTRUCTIONS" to the end
         match = re.search(r'COMPETITION INSTRUCTIONS.*', self.task_desc, re.DOTALL)
 
-        with open("/home/agent/failure_experience.txt", "r") as f:
-            failure_experience = f.read()
-        
-
         prompt: Any = {
             "Introduction": introduction,
             "Task description": match.group(0) if match else self.task_desc,
             "Memory": self.journal.generate_summary(),
             "Is the score higher the better": "True" if self.higher_better else "False",
         }
-
-        timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
-        timed_code = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code)
-        prompt["Previous solution"] = {
-            "Code": wrap_code(timed_code),
-        }
-
-        if "What it has done" in failure_experience:
-            prompt["Failure Experience"] = failure_experience
-            with open("/home/templates/improve_prompt_w_summary.txt", "r") as f:
-                improve_prompt = f.read()
-        else:
-            with open("/home/templates/improve_prompt.txt", "r") as f:
-                improve_prompt = f.read()
         
-        with open("/home/templates/draft_code_template.py", "r") as f:
-            draft_code_template = f.read()
-
-        draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
-        draft_code_template = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', draft_code_template)
-        prompt["Python Code Template"] = f"""
-```
-{draft_code_template}
-```
-"""
-        with open('/home/agent/output.txt', 'r') as output_file:
-            output_perf = output_file.read()
         prompt["Instructions"] = {}
         prompt["Instructions"] |= self._prompt_resp_fmt
         prompt["Instructions"] |= {
@@ -420,11 +391,41 @@ class Agent:
                 "The solution sketch should be 3-5 sentences.",
                 "Don't suggest to do EDA.",
             ],
-            "Model performance": wrap_code(output_perf, lang=""),
-            "Solution improvement sketch guideline": improve_prompt,
+            # "Solution improvement sketch guideline": improve_prompt,
         }
 
-        # prompt["Instructions"] |= self._prompt_impl_guideline
+        timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
+        timed_code = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code)
+        prompt["Previous solution"] = {
+            "Code": wrap_code(timed_code),
+        }
+
+        with open("/home/agent/failure_experience.txt", "r") as f:
+            failure_experience = f.read()
+        if "What it has done" in failure_experience:
+            prompt["Failure Experience"] = failure_experience
+            with open("/home/templates/improve_prompt_w_summary.txt", "r") as f:
+                improve_prompt = f.read()
+        else:
+            with open("/home/templates/improve_prompt.txt", "r") as f:
+                improve_prompt = f.read()
+
+        with open('/home/agent/output.txt', 'r') as output_file:
+            output_perf = output_file.read()
+        prompt["Model performance"] = wrap_code(output_perf, lang="")
+        
+        with open("/home/templates/draft_code_template.py", "r") as f:
+            draft_code_template = f.read()
+        draft_code_template = increase_timeout_limit(draft_code_template, new_timeout=new_timeout)
+        draft_code_template = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', draft_code_template)
+        prompt["Python Code Template"] = f"""
+```
+{draft_code_template}
+```
+"""
+        
+        prompt["Solution improvement sketch guideline"] = improve_prompt
+        prompt["Notes"] = "You **must** keep the `Python Code Template` search structure **exactly as-is** and use `full_search()` to explore the space."
 
         plan, code = self.plan_and_code_query(prompt, qType="_improve")
         new_node = Node(plan=plan, code=code, parent=parent_node)
@@ -1073,7 +1074,6 @@ class Agent:
             self.current_step += 1
         else:
             parent_node = self.search_policy()
-            return None
             logger.info(f"Agent is generating code, parent node type: {type(parent_node)}")
 
             if parent_node is None:
