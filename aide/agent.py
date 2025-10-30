@@ -569,7 +569,7 @@ class Agent:
             "You are an expert machine learning engineer attempting a task. "
             "Your previous solution had a bug and/or did not produce a submission.csv."
             f"{parent_node.analysis if parent_node.analysis else ''} "
-            "Based on the information below, fix bugs without introducing new bugs and changing the overall search space. "
+            "Based on the information below, fix bugs only without introducing new bugs and changing the overall search space and code structure. "
             "Your response should not change the code architecture in `PyGlove` format and use `PyGlove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
@@ -960,6 +960,10 @@ class Agent:
             "Search budget & trials": [
                 "Do not add or enforce timeouts.",
                 "Do not introduce or depend on trial-count caps; assume any existing caps in the template are soft and unrelated to correctness."
+            ],
+            "Experiment Interface Contact (NO MISSING ATTRS)": [
+                "In Experiment.__init__, it declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).",
+                "No ad-hoc attributes: Do not introduce new attribute names outside Experiment.__init__; it is forbidden to access attributes not declared in __init__. Instead, use the provided attributes in __init__."
             ],
         }
 
