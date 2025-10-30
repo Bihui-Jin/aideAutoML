@@ -591,7 +591,7 @@ class Agent:
         # Due to timeout issues, we increase the timeout limit here
         if "Traceback (most recent call last):" not in parent_node.term_out and \
         parent_node.term_out.count("Trial failed with exception:") <10 and \
-        ("Trial" not in output_perf or len([x for x in output_perf.split("\n") if "Trial" in x]) < 7):
+        ("Trial" not in output_perf or len([x for x in output_perf.split("\n") if "Trial" in x]) < 70):
             timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
 
         match = re.search(r'Traceback \(most recent call last\).*', parent_node.term_out, re.DOTALL)
@@ -609,7 +609,7 @@ class Agent:
         prompt: Any = {
             "Introduction": introduction,
             "Instructions": {},
-            "Is the score higher the better": "True" if self.higher_better else "False",
+            "Is the score higher the better": "Yes" if self.higher_better else "No",
             # "Task description": self.task_desc,
             "Previous buggy code": buggy_code,
             "Execution Exception": wrap_code(match.group(0), lang="") if match else wrap_code(parent_node.term_out, lang=""),
