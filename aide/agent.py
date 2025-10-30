@@ -67,8 +67,8 @@ def average_precision_at_k(actual: set, predicted: list, k: int):
     set.
 
     Args:
-        actual : A set of elements that are to be predicted (order doesn't matter)
-        predicted : A list of predicted elements (order does matter, most relevant go first)
+        actual : A set of elements that are to be predicted (**order does not matter**)
+        predicted : A list of predicted elements (**order does matter**, most relevant go first)
         k : The maximum number of predicted elements
     """
     if len(predicted) > k:
@@ -93,8 +93,8 @@ def mean_average_precision_at_k(actual: list[set], predicted: list[list], k: int
     Computes the MAP@k
 
     Args:
-        actual : a list of sets of the elements that are to be predicted (order doesn't matter)
-        predicted : a list of lists of predicted elements (order does matter, most relevant go first)
+        actual : a list of sets of the elements that are to be predicted (order **does not** matter)
+        predicted : a list of lists of predicted elements (**order does matter**, most relevant go first)
         k : The maximum number of predicted elements
     """
     return np.mean([average_precision_at_k(a, p, k) for a, p, in zip(actual, predicted)])
