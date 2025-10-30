@@ -569,7 +569,7 @@ class Agent:
             "You are an expert machine learning engineer attempting a task. "
             "Your previous solution had a bug and/or did not produce a submission.csv."
             f"{parent_node.analysis if parent_node.analysis else ''} "
-            "Based on the information below, fix bugs only without introducing new bugs and changing the overall search space and code structure. "
+            "Based on the information below, fix bugs only without introducing new bugs and changing the overall search space and non buggy code logic. "
             "Your response should not change the code architecture in `PyGlove` format and use `PyGlove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
@@ -949,6 +949,7 @@ class Agent:
                 "Don't suggest to do EDA.",
                 "Do not change the overall solution architecture and use PyGlove still.",
                 "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
+                "Fix the bugs only without introducing new bugs. Do not change the overall search space and non buggy code logic.",
                 "All experiments or configurations **must** use the same evaluation method as before.",
                 "You **must not** change the model family/architecture search knobs. Instead, only fix the bugs mentioned in the Execution output section.",
             ]
