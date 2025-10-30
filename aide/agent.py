@@ -536,7 +536,7 @@ class Agent:
             summarize_model_performance_prompt = f.read()
         summary_prompt = {
             "Is the score higher the better": "Yes, the higer the better." if self.higher_better else "No, the lower the better.",
-            "Model performance": output_perf,
+            "Model performance": wrap_code(output_perf, lang=""),
             "Instructions": summarize_model_performance_prompt,
         }
         model_performance = self.plan_query(summary_prompt, qType="_summarize_model_performance")
@@ -1058,6 +1058,11 @@ class Agent:
                 changes = True
             else:
                 replacements[model] = model  # Model exists, no change needed
+        
+        if "Alibaba-NLP/gte-small-en-v1.5" in model_names:
+            changes = True
+            # special case for this model which has been removed
+            replacements["Alibaba-NLP/gte-small-en-v1.5"] = "Alibaba-NLP/gte-base-en-v1.5"
         
         if not changes:
             return code

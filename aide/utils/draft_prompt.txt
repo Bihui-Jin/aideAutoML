@@ -25,7 +25,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
   - `run(...)`: Build features; split train/valid (stratified for classification). Train, compute `score`, then **refit on full train** with the same hyperparameters (may skip early stop here for speed). Predict test probabilities in the correct order and `return (score, test_probs)`.
 - Explicit Knob Declarations (force concrete candidate lists): You MUST declare the following search-space candidates exactly as listed below:
   - classic_arch is to list all kinds of classic architectures, e.g., mlp, RandomForest, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
-  - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct and Alibaba-NLP/gte-base-en-v1.5.
+  - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct, intfloat/e5-small-v2, and Alibaba-NLP/gte-base-en-v1.5.
 - Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
