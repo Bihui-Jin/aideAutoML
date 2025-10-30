@@ -947,6 +947,7 @@ class Agent:
                 "Don't suggest to do EDA.",
                 "Do not change the overall solution architecture and use PyGlove still.",
                 "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
+                "All experiments or configurations **must** use the same evaluation method as before.",
                 "You **must not** change the model family/architecture search knobs. Instead, only fix the bugs mentioned in the Execution output section.",
             ]
         if "is not a local folder and is not a valid model identifier listed on" in parent_node.term_out:
