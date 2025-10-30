@@ -58,6 +58,80 @@ main_exec_match = re.search(
 )
 main_exec_code_template = main_exec_match.group(1).strip()
 
+MAP_at_k = '''
+def average_precision_at_k(actual: set, predicted: list, k: int):
+    """
+    Computes the average precision at k (AP@k).
+
+    This function computes the average precision at k between a predicted ranking and a ground truth
+    set.
+
+    Args:
+        actual : A set of elements that are to be predicted (order doesn't matter)
+        predicted : A list of predicted elements (order does matter, most relevant go first)
+        k : The maximum number of predicted elements
+    """
+    if len(predicted) > k:
+        predicted = predicted[:k]
+
+    score = 0.0
+    num_hits = 0.0
+
+    for i, p in enumerate(predicted):
+        if p in actual and p not in predicted[:i]:
+            num_hits += 1.0
+            score += num_hits / (i + 1.0)
+
+    if not actual:
+        return 0.0
+
+    return score / min(len(actual), k)
+
+
+def mean_average_precision_at_k(actual: list[set], predicted: list[list], k: int):
+    """
+    Computes the MAP@k
+
+    Args:
+        actual : a list of sets of the elements that are to be predicted (order doesn't matter)
+        predicted : a list of lists of predicted elements (order does matter, most relevant go first)
+        k : The maximum number of predicted elements
+    """
+    return np.mean([average_precision_at_k(a, p, k) for a, p, in zip(actual, predicted)])
+'''
+
+dice_coefficient = '''
+def dice_coefficient(
+    predicted_mask: np.ndarray, true_mask: np.ndarray, both_empty_value: float = np.nan
+) -> float:
+    """
+    Computes the Dice coefficient between two binary masks (can be multi-dimensional)
+
+    Args:
+        predicted_mask: A binary numpy array indicating where the segmentation is predicted
+        true_mask: A binary numpy array indicating where the segmentation is
+        both_empty_value: The value to return when both masks are empty
+    """
+    assert (
+        predicted_mask.shape == true_mask.shape
+    ), f"Predicted mask shape {predicted_mask.shape} does not match true mask shape {true_mask.shape}"
+    # Check if both masks are empty
+    if np.sum(predicted_mask) == 0 and np.sum(true_mask) == 0:
+        return both_empty_value
+
+    # Calculate intersection and union
+    intersection = np.sum(predicted_mask * true_mask)
+    union = np.sum(predicted_mask) + np.sum(true_mask)
+
+    if union == 0:
+        return both_empty_value
+
+    # Calculate Dice coefficient
+    dice_coeff = 2 * intersection / union
+
+    return dice_coeff
+'''
+
 ExecCallbackType = Callable[[str, bool], ExecutionResult]
 
 review_func_spec = FunctionSpec(
@@ -265,6 +339,29 @@ class Agent:
         logger.info("Final plan + code extraction attempt failed, giving up...")
         return "", completion_text  # type: ignore
 
+    def plan_query(self, prompt, qType=None) -> tuple[str, str]:
+        """Generate a natural language plan + code in the same LLM call and split them apart."""
+        completion_text = None
+
+        query_kwargs = {
+            "system_message": prompt,
+            "user_message": None,
+            "model": self.acfg.code.model if qType != "_debug" else self.acfg.debug.model,
+            "convert_system_to_user": self.acfg.convert_system_to_user,
+        }
+
+        if query_kwargs["model"] != "gpt-5":
+            query_kwargs["temperature"] = self.acfg.code.temp
+
+        # if self.acfg.code.model == "qwen3-max":
+        #     query_kwargs["base_url"] = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+
+        logger.info(f"Model {query_kwargs['model']} is used for {qType}")
+
+        completion_text = query(**query_kwargs)
+
+        return  completion_text
+
     def _draft(self) -> Node:
         introduction = (
             "You are a Kaggle grandmaster attending a competition. "
@@ -288,6 +385,76 @@ class Agent:
         }
         if self.acfg.data_preview:
             prompt["Data Overview"] = self.data_preview
+        
+        prompt["Instructions"] = {}
+        prompt["Instructions"] |= self._prompt_resp_fmt
+        with open("/home/templates/draft_prompt.txt", "r") as f:
+            draft_template = f.read()
+        prompt["Instructions"] |= {
+            # "Batching & tensors": [
+            #     "Ensure all DataLoader batches are torch.Tensors (never Python lists) if DataLoader is used.",
+            #     "Provide an explicit collate_fn in DataLoader that stacks items (inputs and targets) into tensors.",
+            #     "Make targets float32 with a stable shape to avoid numpy scalars/0-D tensors.",
+            #     "After collation, it must be valid to call .to(device) on both inputs and targets."
+            # ],
+            "Solution sketch guideline": [
+                # "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
+                "Take the Memory section into consideration when proposing the design."
+                # " don't propose the same modelling solution but keep the evaluation the same.",
+                "The solution sketch should be 3-5 sentences.",
+                "Propose an evaluation metric based on the task description.",
+                "Do not do EDA.",
+                "Use the correct data paths: follow the structure shown in Data Overview.",
+                "The data is already prepared and available in the `./input` directory. There is no need to unzip any files.",
+            ],
+            # "PyGlove symbolic knobs": [
+            #     "Never hardcode TruncatedSVD n_components. Compute n_feats after vectorization and set n_components = min(requested, n_feats - 1). If n_feats <= 1, skip SVD cleanly.",
+            #     "Do NOT store an optimizer in self._optimizer. Implement a method build_optimizer(model) that returns a fresh optimizer bound to the provided model. Inside training(), create the optimizer with build_optimizer(self.model_) after self.model_ is set. Whenever a new model instance is created (e.g., final train on all data), recreate the optimizer for that new model.",
+            #     "Avoid name collisions: keep the factory as build_optimizer(...) (a method), never as an attribute named _optimizer. Do not call self._optimizer() unless it is a method; prefer build_optimizer(self.model_).",
+            #     "If model is from 'huggingface', force rep_branch = 'transformer' (or convert pipelines) so HF models never train on classic TF-IDF features. Conversely, if rep_branch == 'transformer' but a classic model is selected, switch model_family to a classic head automatically.",
+            #     "Provide robust collate_fns: transformer_collate must accept batches of dicts; classic_collate must accept tensors. Never pass ClassicDataset batches to transformer_collate. Select the collate_fn based on the actual dataset type, not just flags. Ensure all batch items are torch.Tensors on device; after collation it must be valid to call .to(device) on inputs/targets.",
+            #     "Load the HF model outside the pg.sample() for loop to avoid re-downloading it every trial.",
+            #     "Only use AutoTokenizer/AutoModel when model_family ∈ {'distilbert-base-uncased','bert-base-uncased','roberta-base'}. If model_family ∈ HF set, force rep_branch='transformer'; otherwise force rep_branch='classic'. Never pass non-HF ids ('mlp','moe','logreg') to from_pretrained.",
+            #     "Ensure encodings have consistent keys across train/val/test (handle missing token_type_ids).",
+            #     "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
+            #     "**Before using any config knob, guarantee it's declared in the symbolic class and bound with a default; in code, read with getattr(self, 'classic_arch', False) (or similar) instead of direct access, and ensure clone()/rebind() preserves defaults so no attribute access can raise AttributeError.**",
+            # ],
+            # "Cautious while coding": [
+            #     "Use the correct data paths: follow the structure shown in Data Overview.",
+            #     "While using `pd.read_json` set the correct lines flag based on the detected extension: the file may be a single JSON array so pandas throws that exact ValueError (`lines=True`).",
+            #     "Keep the submission path exactly submission/submission.csv.",
+            #     "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
+            #     "Ensure path handling is consistent (os.path.join with the nested directories).",
+            #     "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
+            #     "Validate file existence early and fail fast.",
+            #     "Do not add new prints/logging.",
+            # ],
+        }
+
+        map_pattern = r' (Mean\s*Average\s*Precision|MAP)\s*@\s*(\w+|\d+)'
+        dice_pattern = r'Dice\s*Coefficient'
+        if match:
+            if re.search(map_pattern, match.group(0), re.IGNORECASE):
+                prompt["Instructions"] |= {
+                    "Metric MAP implementation": MAP_at_k
+                }
+            if re.search(dice_pattern, match.group(0), re.IGNORECASE):
+                prompt["Instructions"] |= {
+                    "Metric Dice Coefficient implementation": dice_coefficient
+                }
+        else:
+            if re.search(map_pattern, self.task_desc, re.IGNORECASE):
+                prompt["Instructions"] |= {
+                    "Metric MAP implementation": MAP_at_k
+                }
+            if re.search(dice_pattern, self.task_desc, re.IGNORECASE):
+                prompt["Instructions"] |= {
+                    "Metric Dice Coefficient implementation": dice_coefficient
+                }
+
+
+        prompt["Instructions"] |= self._prompt_environment
+        # prompt["Instructions"] |= self._prompt_impl_guideline
 
         with open("/home/templates/draft_code_template.py", "r") as f:
             draft_code_template = f.read()
@@ -296,53 +463,6 @@ class Agent:
 {draft_code_template}
 ```
 """
-        
-        prompt["Instructions"] = {}
-        prompt["Instructions"] |= self._prompt_resp_fmt
-        with open("/home/templates/draft_prompt.txt", "r") as f:
-            draft_template = f.read()
-        prompt["Instructions"] |= {
-            "Batching & tensors": [
-                "Ensure all DataLoader batches are torch.Tensors (never Python lists) if DataLoader is used.",
-                "Provide an explicit collate_fn in DataLoader that stacks items (inputs and targets) into tensors.",
-                "Make targets float32 with a stable shape to avoid numpy scalars/0-D tensors.",
-                "After collation, it must be valid to call .to(device) on both inputs and targets."
-            ],
-            "Solution sketch guideline": [
-                # "This first solution design should be relatively simple, without ensembling or hyper-parameter optimization.",
-                "Take the Memory section into consideration when proposing the design,"
-                " don't propose the same modelling solution but keep the evaluation the same.",
-                "The solution sketch should be 3-5 sentences.",
-                "Propose an evaluation metric that is reasonable for this task.",
-                "Don't suggest to do EDA.",
-                "The data is already prepared and available in the `./input` directory. There is no need to unzip any files.",
-            ],
-            "PyGlove symbolic knobs": [
-                "Never hardcode TruncatedSVD n_components. Compute n_feats after vectorization and set n_components = min(requested, n_feats - 1). If n_feats <= 1, skip SVD cleanly.",
-                "Do NOT store an optimizer in self._optimizer. Implement a method build_optimizer(model) that returns a fresh optimizer bound to the provided model. Inside training(), create the optimizer with build_optimizer(self.model_) after self.model_ is set. Whenever a new model instance is created (e.g., final train on all data), recreate the optimizer for that new model.",
-                "Avoid name collisions: keep the factory as build_optimizer(...) (a method), never as an attribute named _optimizer. Do not call self._optimizer() unless it is a method; prefer build_optimizer(self.model_).",
-                "If model is from 'huggingface', force rep_branch = 'transformer' (or convert pipelines) so HF models never train on classic TF-IDF features. Conversely, if rep_branch == 'transformer' but a classic model is selected, switch model_family to a classic head automatically.",
-                "Provide robust collate_fns: transformer_collate must accept batches of dicts; classic_collate must accept tensors. Never pass ClassicDataset batches to transformer_collate. Select the collate_fn based on the actual dataset type, not just flags. Ensure all batch items are torch.Tensors on device; after collation it must be valid to call .to(device) on inputs/targets.",
-                "Load the HF model outside the pg.sample() for loop to avoid re-downloading it every trial.",
-                "Only use AutoTokenizer/AutoModel when model_family ∈ {'distilbert-base-uncased','bert-base-uncased','roberta-base'}. If model_family ∈ HF set, force rep_branch='transformer'; otherwise force rep_branch='classic'. Never pass non-HF ids ('mlp','moe','logreg') to from_pretrained.",
-                "Ensure encodings have consistent keys across train/val/test (handle missing token_type_ids).",
-                "Ensure search space is large enough: each pg.oneof should offer at least 10 options.",
-                "**Before using any config knob, guarantee it's declared in the symbolic class and bound with a default; in code, read with getattr(self, 'classic_arch', False) (or similar) instead of direct access, and ensure clone()/rebind() preserves defaults so no attribute access can raise AttributeError.**",
-            ],
-            "Cautious while coding": [
-                "Use the correct data paths: follow the structure shown in Data Overview.",
-                "While using `pd.read_json` set the correct lines flag based on the detected extension: the file may be a single JSON array so pandas throws that exact ValueError (`lines=True`).",
-                "Keep the submission path exactly submission/submission.csv.",
-                "Preserve test ID ordering: capture test IDs once and use that same ordering when writing predictions; do not re-read the test file at submission time.",
-                "Ensure path handling is consistent (os.path.join with the nested directories).",
-                "Be memory-safe between trials: free model/optimizer, del large tensors, call torch.cuda.empty_cache() if CUDA is used, and avoid OOMs.",
-                "Validate file existence early and fail fast.",
-                "Do not add new prints/logging.",
-            ],
-        }
-
-        prompt["Instructions"] |= self._prompt_environment
-        prompt["Instructions"] |= self._prompt_impl_guideline
         prompt["Symbolic Model Coding with Pyglove"] = draft_template
 
 
@@ -376,8 +496,8 @@ class Agent:
         prompt: Any = {
             "Introduction": introduction,
             "Task description": match.group(0) if match else self.task_desc,
-            "Memory": self.journal.generate_summary(),
-            "Is the score higher the better": "True" if self.higher_better else "False",
+            # "Memory": self.journal.generate_summary(),
+            "Is the score higher the better": "Yes, the higer the better." if self.higher_better else "No, the lower the better.",
         }
         
         prompt["Instructions"] = {}
@@ -385,10 +505,10 @@ class Agent:
         prompt["Instructions"] |= {
             "Solution requirments": [
                 "The solution sketch should be a brief natural language description of how the previous solution can be improved.",
-                "You should be very specific and should only propose a single actionable improvement.",
-                "This improvement should be atomic so that we can experimentally evaluate the effect of the proposed change.",
-                "Take the Memory section into consideration when proposing the improvement.",
-                f"Keep at most {5 - self.valid_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.valid_improvement_count <= 4 else "",
+                # "You should be very specific and should only propose a single actionable improvement.",
+                # "This improvement should be atomic so that we can experimentally evaluate the effect of the proposed change.",
+                # "Take the Memory section into consideration when proposing the improvement.",
+                f"Keep at most {4 - self.valid_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.valid_improvement_count <= 2 else "",
                 "The solution sketch should be 3-5 sentences.",
                 "Don't suggest to do EDA.",
             ],
@@ -397,9 +517,7 @@ class Agent:
 
         timed_code, new_timeout = increase_timeout_limit(text=parent_node.code)
         timed_code = re.sub(r'run_smoke_test\s*=\s*True', 'run_smoke_test = False', timed_code)
-        prompt["Previous solution"] = {
-            "Code": wrap_code(timed_code),
-        }
+        prompt["Previous solution"] = wrap_code(timed_code)
 
         with open("/home/agent/failure_experience.txt", "r") as f:
             failure_experience = f.read()
@@ -411,9 +529,20 @@ class Agent:
             with open("/home/templates/improve_prompt.txt", "r") as f:
                 improve_prompt = f.read()
 
+        
         with open('/home/agent/output.txt', 'r') as output_file:
             output_perf = output_file.read()
-        prompt["Model performance"] = wrap_code(output_perf, lang="")
+        with open("/home/templates/summarize_model_performance_prompt.txt", "r") as f:
+            summarize_model_performance_prompt = f.read()
+        summary_prompt = {
+            "Is the score higher the better": "Yes, the higer the better." if self.higher_better else "No, the lower the better.",
+            "Model performance": output_perf,
+            "Instructions": summarize_model_performance_prompt,
+        }
+        model_performance = self.plan_query(summary_prompt, qType="_summarize_model_performance")
+        logger.info(f"Model performance summary:\n{model_performance}")
+
+        prompt["Model performance"] = model_performance
         
         with open("/home/templates/draft_code_template.py", "r") as f:
             draft_code_template = f.read()
@@ -425,8 +554,8 @@ class Agent:
 ```
 """
         
-        prompt["Solution improvement sketch guideline"] = improve_prompt
         prompt["Notes"] = "You **must** keep the `Python Code Template` search structure **exactly as-is** and use `full_search()` to explore the space."
+        prompt["Solution improvement sketch guideline"] = improve_prompt
 
         plan, code = self.plan_and_code_query(prompt, qType="_improve")
         new_node = Node(plan=plan, code=code, parent=parent_node)
@@ -436,8 +565,9 @@ class Agent:
     def _debug(self, parent_node: Node) -> Node:
         introduction = (
             "You are an expert machine learning engineer attempting a task. "
-            "Your previous solution had a bug and/or did not produce a submission.csv, "
-            "so based on the information below, you should fix bugs without introducing new bugs and changing the overall search space. "
+            "Your previous solution had a bug and/or did not produce a submission.csv."
+            f"{parent_node.analysis if parent_node.analysis else ''} "
+            "Based on the information below, fix bugs without introducing new bugs and changing the overall search space. "
             "Your response should not change the code architecture in `PyGlove` format and use `PyGlove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
@@ -487,7 +617,7 @@ class Agent:
         if os.path.exists('/home/agent/running.txt'):
             with open('/home/agent/running.txt', 'r') as f:
                 running_exp = f.read()
-            prompt["Search configuration (PyGlove)"] = f"Exception caused by the knob configuration below.\n"+wrap_code(running_exp, lang="")
+            prompt["Search configuration (PyGlove)"] = f"Exception caused by running the knob configuration below.\n"+wrap_code(running_exp, lang="")
 
         # logger.info(f"Parent node term_out1:\n{''.join(parent_node.term_out)}")
         
@@ -811,20 +941,25 @@ class Agent:
 #         # A frozen enum with value set to 'a' that is not modifiable by subclasses.
 #         pg.typing.Enum('a', ['a', 'b', 'c']).freeze('a')
 # """,}
-        prompt["Instructions"] |= {
-            "Bugfix improvement sketch guideline": [
+        
+        bugfix_guidelines = [
                 "You should write a brief natural language description (3-5 sentences) of how the issue in the previous implementation can be fixed.",
                 "Don't suggest to do EDA.",
                 "Do not change the overall solution architecture and use PyGlove still.",
                 "Do not change anything in the main execution code chunk, keeping it from the Main Execution Code Chunk Template below.",
                 "You **must not** change the model family/architecture search knobs. Instead, only fix the bugs mentioned in the Execution output section.",
-                "Make sure the base model is loaded from the correct directory. For example, the model deberta-v3-base-mnli is from MoritzLaurer not microsoft." if "is not a local folder and is not a valid model identifier listed on" in parent_node.term_out else "",
-            ],
+            ]
+        if "is not a local folder and is not a valid model identifier listed on" in parent_node.term_out:
+            bugfix_guidelines.append("Make sure the base model is loaded from the correct directory. For example, the model deberta-v3-base-mnli is from MoritzLaurer not microsoft.")
+        
+        prompt["Instructions"] |= {
+            "Bugfix improvement sketch guideline": bugfix_guidelines,
             "Search budget & trials": [
-                "Do not add or enforce timeouts; run trials to completion unless an actual error occurs.",
+                "Do not add or enforce timeouts.",
                 "Do not introduce or depend on trial-count caps; assume any existing caps in the template are soft and unrelated to correctness."
             ],
         }
+
         # prompt["Instructions"] |= self._prompt_impl_guideline
         
         prompt["Main Execution Code Chunk Template"] = f"""
@@ -1096,26 +1231,36 @@ class Agent:
 
             # Remove future tense from the plan for better logging
             patterns = [
-                "will ", "'ll ", "'s going to ", "'re going to ", "is going to ", 
-                "are going to ", "'s about to ", "'re about to ", "is about to ", "are about to "
+                "will ", 
+                "'ll ", "’ll", 
+                "'s going to ", "'re going to ", 
+                "’s going to ", "’re going to ", 
+                "is going to ", "are going to ",
+                "'s about to ", "'re about to ", 
+                "’s about to ", "’re about to ", 
+                "is about to ", "are about to "
             ]
             pattern = '|'.join(re.escape(p) for p in patterns)
             improve_plan = re.sub(pattern, '', result_node.plan)
             
-            if self.higher_better:
-                self.valid_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and result_node.metric > parent_node.metric else 0
-                if parent_node is not None and not parent_node.is_buggy and result_node.metric < parent_node.metric:
-                    with open('/home/agent/failure_experience.txt', 'a') as output_file:
-                        output_file.write(f"- Parent solution achievement: {parent_node.metric}\n")
-                        output_file.write(f"- This solution achieved score: {result_node.metric}\n")
-                        output_file.write(f"- What it has done: \"{improve_plan}\"\n\n")
-            else:
-                self.valid_improvement_count += 1 if parent_node is not None and not parent_node.is_buggy and result_node.metric < parent_node.metric else 0
-                if parent_node is not None and not parent_node.is_buggy and result_node.metric > parent_node.metric:
-                    with open('/home/agent/failure_experience.txt', 'a') as output_file:
-                        output_file.write(f"- Parent solution achievement: {parent_node.metric}\n")
-                        output_file.write(f"- This solution achieved score: {result_node.metric}\n")
-                        output_file.write(f"- What it has done: \"{improve_plan}\"\n\n")
+            if parent_node is not None and not parent_node.is_buggy:
+                if self.higher_better:
+                    if result_node.metric > parent_node.metric:
+                        self.valid_improvement_count += 1
+                    else:
+                        with open('/home/agent/failure_experience.txt', 'a') as output_file:
+                            output_file.write(f"- Parent solution achievement: {parent_node.metric.value}\n")
+                            output_file.write(f"- This solution achieved score: {result_node.metric.value}\n")
+                            output_file.write(f"- What this solution has done: \"{improve_plan}\"\n\n")
+                else:
+                    if result_node.metric < parent_node.metric:
+                        self.valid_improvement_count += 1
+                    else:
+                        with open('/home/agent/failure_experience.txt', 'a') as output_file:
+                            output_file.write(f"- Parent solution achievement: {parent_node.metric.value}\n")
+                            output_file.write(f"- This solution achieved score: {result_node.metric.value}\n")
+                            output_file.write(f"- What this solution has done: \"{improve_plan}\"\n\n")
+
             # # handle final cases where we missed buggy nodes somehow
             # if not result_node.is_buggy:
             #     if not (self.cfg.workspace_dir / "submission" / "submission.csv").exists():
@@ -1161,10 +1306,10 @@ class Agent:
                 raise StopIteration(f"Early stopping: {self.acfg.max_no_improvement} consecutive nodes without improvement")
 
     def parse_exec_result(self, node: Node, exec_result: ExecutionResult) -> Node:
-        if os.path.exists('/home/agent/output.txt'):
-            with open('/home/agent/output.txt', 'r') as output_file:
-                output_perf = output_file.read()
-                logger.info(output_perf)
+        # if os.path.exists('/home/agent/output.txt'):
+        #     with open('/home/agent/output.txt', 'r') as output_file:
+        #         output_perf = output_file.read()
+        #         logger.info(output_perf)
 
         logger.info(f"Agent is parsing execution results for node {node.id}")
 
@@ -1181,9 +1326,12 @@ class Agent:
                 "You have written code to solve this task and now need to evaluate the output of the code execution. "
                 "You should determine if there were any bugs as well as report the empirical findings."
             )
+        # Using re.search to find from "COMPETITION INSTRUCTIONS" to the end
+        match = re.search(r'COMPETITION INSTRUCTIONS.*', self.task_desc, re.DOTALL)
+
         prompt = {
             "Introduction": introduction,
-            "Task description": self.task_desc,
+            "Task description": match.group(0) if match else self.task_desc,
             "Implementation": wrap_code(node.code),
             "Execution output": wrap_code(node.term_out, lang=""),
         }

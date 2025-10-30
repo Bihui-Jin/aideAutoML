@@ -197,7 +197,7 @@ def full_search():
         feedback(score)
 
         with open('/home/agent/output.txt', 'a') as output_file:
-            output_file.write(f"\n=== Trial {run}===\n")
+            output_file.write(f"\n=== Trial {run} ===\n")
             output_file.write(f"Validation score: {score:.6f}\n")
             output_file.write(f"Tested parameters: {exp}\n")
 

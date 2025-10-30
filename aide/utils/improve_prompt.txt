@@ -10,27 +10,23 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
 ########### INPUTS YOU CAN RELY ON ###########
 - The **Task description**.
 - The **previously developed solution** (search space and code skeleton).
-- A list of **Model performance** for many trials: for each trial, the chosen **Tested parameters settings** (architecture + hyperparameters) and its **metric** (Validation score).
-- **Is the higher the better**: True, if the metric is the higher the better; Otherwise, False.
+- **Model performance** summary: suggestion for finalized and determining parameters. 
+- **Is the higher the better**: Yes, if the metric is the higher the better; Otherwise, No.
 - The **Python Code Template** (provided separately and must remain structurally intact).
 
 ########### OBJECTIVES ###########
-1) **Analyze "Model performance" (all trials)** to decide which parameters should be **finalized** (no longer searched).
-   - Only use what you can infer from the trial table: parameter from performance associations across trials.
-   - Identify parameters (architecture types and hyperparameters) that consistently yield top scores or have negligible impact on performance.
-   - For these **finalized parameters**, lock them by using a **literal fixed value** in the Experiment constructor.
-   - Examples: if `activation='gelu'` dominates, fix `activation='gelu'`. If `arch='wide_deep'` is consistently best, fix that and drop the others.
+1) **Analyze "Model performance"**:
+   - For these **finalized parameters** (no longer searched), lock them by using a **literal fixed value** in the Experiment constructor.
+      - Examples: if `activation='gelu'` dominates, fix `activation='gelu'`. If `arch='wide_deep'` is consistently best, fix that and drop the others.
+   - For these **determining parameters** (still impactful/uncertain), remain them in the search space.
+      - **Do NOT just narrow** to a couple of values. Instead, construct **fine-grained local grids** centered on the best observed values:
+         - Example (learning rate near 5e-4):  
+            `pg.oneof([3e-4, 4e-4, 4.5e-4, 5e-4, 5.5e-4, 6e-4, 7e-4])`
+         - Example (hidden size near 256–384):  
+            `pg.oneof([192, 224, 256, 288, 320, 352, 384])`
+      - Prefer **dense local grids** over broad coarse ranges. Expand **around** the best region with a **small step size** (e.g., ±20–30% window, step by 5–10%).
 
-2) **Analyze "Model performance" (all trials)** to decide which parameters are still **determining** (impactful/uncertain) and should **remain in the search space**.
-   - Keep only the **promising candidates** for those knobs, pruning poor performers.
-   - **Do NOT just narrow** to a couple of values. Instead, construct **fine-grained local grids** centered on the best observed values:
-     - Example (learning rate near 5e-4):  
-       `pg.oneof([3e-4, 4e-4, 4.5e-4, 5e-4, 5.5e-4, 6e-4, 7e-4])`
-     - Example (hidden size near 256–384):  
-       `pg.oneof([192, 224, 256, 288, 320, 352, 384])`
-   - Prefer **dense local grids** over broad coarse ranges. Expand **around** the best region from trials with a **small step size** (e.g., ±20–30% window, step by 5–10%).
-
-3) **Increase the training sample size a bit** while respecting runtime.
+2) **Increase the training sample size a bit** while respecting runtime.
    - Reduce holdout size subtly (e.g., `valid_size` from `0.2` to `0.15` or `0.10`) to train on more data.
    - Increase the sample size of the training set by 30% from the previously developed solution. If the previously developed solution used all already, do nothing.
    - Keep epochs modest to fit time budget.
