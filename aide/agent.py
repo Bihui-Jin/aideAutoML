@@ -508,7 +508,7 @@ class Agent:
                 # "You should be very specific and should only propose a single actionable improvement.",
                 # "This improvement should be atomic so that we can experimentally evaluate the effect of the proposed change.",
                 # "Take the Memory section into consideration when proposing the improvement.",
-                f"Keep at most {4 - self.valid_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.valid_improvement_count <= 2 else "",
+                f"Keep at most {6 - self.valid_improvement_count} options from each classic, Deep & Cross Network (DCN), and HF options from the Previous solution." if self.valid_improvement_count <= 4 else "",
                 "The solution sketch should be 3-5 sentences.",
                 "Don't suggest to do EDA.",
             ],

@@ -12,7 +12,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     1) **Transformer/Text branch** (when task is text): build a tokenizer with `AutoTokenizer.from_pretrained(backbone, use_fast=True, trust_remote_code=True, token=auth_token)` and produce **dict tensors** with keys `input_ids`, `attention_mask`, and include `token_type_ids` when present; **symbolic `max_length ∈ {128, 256, 384}`**.  
     2) **Classical branch**: TF-IDF/Hashing (+ optional SVD) producing dense features; **symbolic** representation choice, ngram ranges, max_features, and optional SVD dims.
     Choose branch via a **symbolic knob** (e.g., `pg.oneof(['transformer','tfidf'])`) while still auto-detecting task type from the dataset description.
-  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include ALL of the latest and robust classic, Deep & Cross Network (DCN), and HF options** (at least 6 options for each). Do not use the HF Transformer released before 2023.  
+  - `model(...)`: Return a model moved to `DEVICE`. **Model family knob MUST include ALL of the latest and robust classic, Deep & Cross Network (DCN), and HF options** (at least 10 options for each). Do not use the HF Transformer released before 2023.  
     - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`.  
     - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
   - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
@@ -32,43 +32,29 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 ########### COMPETITION-AWARE IMPLEMENTATION ###########
 Select the relevant subset based on task type you infer from the competition text:
 1) **Data Processing Search Space (`data_processing`)** Suggestions
-   - For TEXT / NLP / QA / TEXT MATCHING / TOXICITY / SENTIMENT tasks:
-     - Augmentations: SubwordRegularization (SentencePiece), symmetric swaps (response_a↔b TTA), Random undersampling for imbalance.
-     - Features / preprocessing: rigorous TextCleaning (lowercase, URLs/HTML/punct/emoji/digits, contractions, misspellings), Tokenization (WordPiece/BPE; attention masks), Padding/Truncation, TF-IDF/Count + SVD, NB-SVM log-count ratio, length/structure counts, similarities (cosine/Jaccard/Levenshtein), OneHot/LabelEncoding for categories, distribution alignment if targets bounded.
-     - QA specifics: SlidingWindow with doc_stride, span post-cleaning, char-level aggregation via offset_mapping.
-     - Consider symbolic knobs but **not limit to**: representation (`pg.oneof(['tfidf_word','tfidf_char_wb','hashing_word', etc])`), ngram ranges, max_features / hashing n_features, sublinear_tf/use_idf/norm, optional SVD dims (`'none','svd256','svd512'`), stopwords, text-length features on/off, numeric side-channel scaler (`'standard','robust','none'`), optional log1p for heavy-tailed numeric features.
-   - For TABULAR tasks:
-     - Imbalance: SMOTE / undersampling; for ensembles use Bootstrapping.
-     - Preprocessing: Imputation (mean/median/mode/KNN), Standardization/Robust/MinMax, Log/Power transforms (including target via TransformedTargetRegressor).
-     - Encodings: OneHot, Label/Ordinal, TargetEncoding, frequency/count encodings; careful leakage control with CV.
-     - Feature crafting: polynomial/interactions, correlation filtering, low-variance drop, PCA/SVD, adversarial validation pruning, domain distances (geo Haversine/bearings; airport/landmark distances), string parsing to structured fields.
-     - Consider symbolic knobs but not limited to: Imputation knob (`'zero','median'`), scaler knob (`'standard','robust','none'`).
-   - For IMAGE CLASSIFICATION (classification/detection/segmentation) tasks:
-     - Augmentations to consider
-       - Class imbalance or small data: RandomOversampling / Undersampling, MixUp, TTA (flip/rotate/scale).
-       - Invariance to pose/orientation: Flip (H/V), Rotate/RandomRotate90, ShiftScaleRotate, Translation, Zoom/Scale, Shear, Warp/GridDistortion.
-       - Robustness to lighting/color/camera: ColorJitter (brightness/contrast/saturation/hue), Gamma, CLAHE, HueSaturationValue.
-       - Regularization on textures/artefacts: CutOut/CoarseDropout, Blur/NoiseInjection, JPEG artefact sim (JpegCompression).
-       - Inference ensembling: TTA (flip/rot/multi-scale), Weighted Boxes Fusion for detections.
-     - Feature engineering / preprocessing
-       - Resize to backbone input; Normalization/MinMaxScaling; Standardization to ImageNet mean/std or model-specific preprocess_input.
-       - Medical/DICOM: VOILUT, HU rescaling, Photometric inversion fix, Center/ROI crop, Padding to aspect, ChannelReplication for 1→3ch, Orientation correction.
-       - Gigapixel/volumes: SlidingWindow/Tiling with Overlap blending; Slice stacking or Depth pooling for 2.5D; Resampling-3D.
-       - Label format needs: OneHot/MultiLabelBinarization, bbox format conversions; per-class Thresholding / small-object removal.
-     - Consider symbolic knobs but not limited to: complex torchvision transforms choices (resize, crop, flip), normalize on/off; but keep light for runtime. 
-   - For AUDIO tasks:
-     - Augmentations: TimeShift, RandomCrop on spectrograms, NoiseInjection, SilenceTrim, WaveletDenoising, FrequencyFiltering, TTA.
-     - Features: MelSpectrogram (+ dB/log), MFCC, spectral stats (centroid/rolloff/ZCR), Fixed-length padding/truncation, Standardization/MinMaxScaling, classic stats aggregation.
-   - For TIME SERIES / SEQUENCES (ventilator, GNSS, EEG, volcano, OSIC) tasks:
-     - Augmentations / expansions: Smoothing/KalmanSmoothing, NoiseDenoising, OutlierClipping, Intra-entity pair/window sampling.
-     - Features: windowed Lag/Diff/Derivative, Rolling stats/quantiles/EWMs, Cumsum/area/integrals, interaction FeatureCrosses, GroupBy aggregates, ClusteringFeatures, Time deltas/indices, domain filters (bandpass for EEG, satellite selection for GNSS).
-     - Preprocessing: Imputation (careful per entity), Robust/Standard/MinMax scaling (fit on train only), SequenceReshaping to (T, F), GroupKFold/group-aware CV to avoid leakage, postprocess to valid grids (e.g., rounding pressure to known steps).
-   - For RECSYS / RANKING tasks:
-     - Features: Label/TargetEncoding of IDs, DatetimeFeatures (recency, cycles), Imputation for demographics, embedding L2 normalization, co-occurrence; for ranking tasks, percentile ranks, position bias indicators.
-   - For STEGANALYSIS / REMOTE SENSING / SPECIAL DOMAINS tasks:
-     - Augmentations: rotations/flips; JPEG artefact simulation for steganalysis; undersampling negatives (contrails).
-     - Features: false-color composites, temporal stacking/aggregation, intensity clipping, heuristic thresholding for masks.
-   - Return both features `(X_all, X_test)` (and any IDs if needed inside `run()`), but keep method signature as in the template.
+   - Core preprocessing (Tabular)
+     - Imputation
+       - Numeric: median imputation inside a pipeline so it's applied consistently across CV folds (imputer_numeric ∈ {median, ...}). 
+       - Categorical: most-frequent (mode) imputation within the same pipeline (imputer_categorical ∈ {most_frequent, ...}).
+     - Binarization
+       - Map boolean/flag features to {0,1} explicitly to avoid mixed types (bool_as_int ∈ {True, False} if False, leave as boolean dtype).
+   - Scaling & sparsity safety (standardization)
+     - Scale numeric features with standard scaling.
+     - When the design matrix is sparse (e.g., after one-hot), apply a variance scaler that **does not** center:
+       - Constraint: with_mean = False on sparse matrices to preserve sparsity and avoid densification.
+       - Knob: scale_sparse_onehot ∈ {True, False}
+   - Categorical handling
+     - One-Hot Encoding: one-hot encode categorical variables with unseen-category safety:
+       - Setting: handle_unknown='ignore' to prevent inference-time errors.
+       - Knob: onehot_drop ∈ {None, 'first'} (control collinearity if desired).
+     - Category Mapping / Normalization: normalize semantically equivalent category labels into canonical buckets before encoding (e.g., merge near-duplicates / alias forms).
+   - Structured feature crafting (domain-agnostic patterns)
+     - Parsing composite fields to atomic parts: split structured strings into meaningful subfields (e.g., a "compound code" into components like block/side).
+     - Deriving group identifiers from IDs: extract a group key from an identifier to capture shared context among records (e.g., family/group from a passenger/customer ID prefix), e.g., group_extractor ∈ {regex_rule, delimiter_rule, none, ...}.
+     - Light external inference for categorical enrichment: infer a low-cardinality attribute from an existing string token using a deterministic lookup or lightweight classifier (e.g., name → name-based attribute); keep outputs to a small, normalized category set.
+     - Additive aggregations across related numerics: create sum-type rollups (e.g., related spend/count/usage components) to capture overall magnitude.
+   - Pipeline hygiene
+     - Ensures consistent fit/transform across CV and inference, and prevents leakage to all steps inside a single pipeline / column transformer.
    - Consider to use bootstrap if beneficial.
 
 2) **Model Architecture Search Space (model)** Suggestions
@@ -76,7 +62,7 @@ Select the relevant subset based on task type you infer from the competition tex
      - Consider but **not limit to**: use pg.oneof to select from transformers (DeBERTaV3/RemBERT/MuRIL/SentenceTransformer/LLaMA), RandomForest, LogReg, SVM, NaiveBayes, etc.
 
    - For IMAGE CLASSIFICATION tasks:
-     - Consider but **not limit to**: use pg.oneof to select from transformers (ViT-B/L-16/32, DeiT, Swin-T), hybrid conv-attention models (CoAtNet, MaxViT/MaxxViT, MobileViT, EfficientFormer), modern CNNs (ConvNeXt/ConvNeXtV2, EfficientNetV2, NFNet, ResNet-50/101/152, ResNeSt, BiT, RexNet), MLP, tree ensembles (XGBoost, LightGBM, CatBoost, RandomForest, ExtraTrees), linear baselines (LogisticRegression, SVM), and PCA for dimensionality reduction, etc.
+     - Consider but **not limit to**: use pg.oneof to select from transformers (ViT-B/L-16/32, DeiT, Swin-T), hybrid conv-attention models (CoAtNet, MaxViT/MaxxViT, MobileViT, EfficientFormer), modern CNNs (ConvNeXt/ConvNeXtV2, EfficientNetV2, NFNet, ResNet-50/101/152, ResNeSt, BiT, RexNet), MLP, tree ensembles (XGBoost, LightGBM, CatBoost, RandomForest), linear baselines (LogisticRegression, SVM), and PCA for dimensionality reduction, etc.
   
    - For TIME SERIES / SEQUENCE  tasks (e.g., tabular, sensors, bio, ventilator, GNSS, EEG):
      - Consider but **not limit to**: use pg.oneof to select from transformers (Transformer), sequence RNNs (LSTM/GRU), convolutional (CNN), graph (GNN), autoencoders (Autoencoder/Denoising AE), boosting & tree ensembles (LightGBM/XGBoost/CatBoost), linear models (Linear/ElasticNet/Ridge/Lasso), and kernel methods (SVR), etc.
@@ -123,7 +109,7 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
        - Do **not** save submission CSV for the smoke test.
    - Classic family smoke test:
      - Construct a minimal Experiment with each one in classic_arch:
-       - `classic_arch='dcn2'`,
+       - `classic_arch='dcn8'`,
        - A classic text/tabular preprocessing setting (e.g., 'tfidf_word' with a tiny max_features=1024 and SVD on),
        - batch_size_classic=64, epochs=1, early stopping disabled.
      - Use the same tiny sample dataset protocol (first few rows).
