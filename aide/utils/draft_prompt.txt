@@ -1,6 +1,6 @@
 Your task is to FILL IN the provided Python Code Template as the returned markdown code block so that it becomes a fully working, self-contained NAS script using **PyGlove** and **PyTorch** and can achieve the best competition metric in the task. You must (1) analyze the competition and dataset descriptions, (2) infer the task type and metric, (3) build a symbolic search space for data processing, model architectures (including **HuggingFace Transformers**), optimizer/training strategies, and (4) train/evaluate and save a valid submission.
 
-########### ABSOLUTE REQUIREMENTS ###########
+## ABSOLUTE REQUIREMENTS
 - Frameworks: Use **PyTorch** (run on GPU via `DEVICE`). You may instantiate **Mixture-of-Experts (MoE)**, use **scikit-learn** for preprocessing, and integrate **HuggingFace Transformers** or **timm** backbones where appropriate. 
 - Search Spaces (PyGlove): Define **all tunable knobs** with `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates).  
   - Do **NOT** pass `default` to `pg.oneof` (not supported).  
@@ -29,25 +29,31 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 - Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
-########### COMPETITION-AWARE IMPLEMENTATION ###########
+## INPUTS YOU CAN RELY ON
+- The **Task description**: describs the competition goal, task type (**infer** whether it is recommendations, classification, etc.), evaluation method, submission rules, and dataset as well as file description.
+- The **Data overview**: the data tree structure which shows trainning dataset referenceing to the file description (the `Data` section).
+- The **Python Code Template** (must remain structurally intact).
+
+## COMPETITION-AWARE IMPLEMENTATION
 Select the relevant subset based on task type you infer from the competition text:
 1) **Data Processing Search Space (`data_processing`)** Suggestions
-   - Core preprocessing (Tabular)
+   - Core preprocessing
      - Imputation
        - Numeric: median imputation inside a pipeline so it's applied consistently across CV folds (imputer_numeric ∈ {median, ...}). 
        - Categorical: most-frequent (mode) imputation within the same pipeline (imputer_categorical ∈ {most_frequent, ...}).
      - Binarization
        - Map boolean/flag features to {0,1} explicitly to avoid mixed types (bool_as_int ∈ {True, False} if False, leave as boolean dtype).
-   - Scaling & sparsity safety (standardization)
-     - Scale numeric features with standard scaling.
-     - When the design matrix is sparse (e.g., after one-hot), apply a variance scaler that **does not** center:
-       - Constraint: with_mean = False on sparse matrices to preserve sparsity and avoid densification.
-       - Knob: scale_sparse_onehot ∈ {True, False}
-   - Categorical handling
-     - One-Hot Encoding: one-hot encode categorical variables with unseen-category safety:
-       - Setting: handle_unknown='ignore' to prevent inference-time errors.
-       - Knob: onehot_drop ∈ {None, 'first'} (control collinearity if desired).
-     - Category Mapping / Normalization: normalize semantically equivalent category labels into canonical buckets before encoding (e.g., merge near-duplicates / alias forms).
+     - Transaction-based feature engineering, e.g., handle entities with no recent data via a high-signal (global popularity, etc.) dummy list.
+     - Standardization & sparsity-safe scaling
+       - Scale numeric features with standard scaling.
+       - When the design matrix is sparse (e.g., after one-hot), apply a variance scaler that **does not** center:
+         - Constraint: with_mean = False on sparse matrices to preserve sparsity and avoid densification.
+         - Knob: scale_sparse_onehot ∈ {True, False}
+     - Category Normalization
+       - Normalize semantically equivalent category labels into canonical buckets before encoding (e.g., merge near-duplicates / alias forms).
+     - Categorical handling
+       - One-Hot Encoding: one-hot encode categorical variables with unseen-category safety:
+         - Setting: handle_unknown='ignore' to prevent inference-time errors.
    - Structured feature crafting (domain-agnostic patterns)
      - Parsing composite fields to atomic parts: split structured strings into meaningful subfields (e.g., a "compound code" into components like block/side).
      - Deriving group identifiers from IDs: extract a group key from an identifier to capture shared context among records (e.g., family/group from a passenger/customer ID prefix), e.g., group_extractor ∈ {regex_rule, delimiter_rule, none, ...}.
@@ -55,7 +61,11 @@ Select the relevant subset based on task type you infer from the competition tex
      - Additive aggregations across related numerics: create sum-type rollups (e.g., related spend/count/usage components) to capture overall magnitude.
    - Pipeline hygiene
      - Ensures consistent fit/transform across CV and inference, and prevents leakage to all steps inside a single pipeline / column transformer.
-   - Consider to use bootstrap if beneficial.
+   - General
+     - Guarantee exactly k outputs per entity (or per row) to match leaderboard/consumer contracts. If fewer than k unique candidates are available, deterministically backfill from the global list until length k.
+     - If an entity lacks recent evidence in all chosen windows, backfill from a global-popular list.
+     - Construct validation exactly like the target horizon: training windows precede a held-out window with the same length and rules used for scoring.
+     - Consider to use bootstrap if beneficial.
 
 2) **Model Architecture Search Space (model)** Suggestions
    - For NLP / TEXT PAIRING / QA / SENTIMENT / ARENA tasks:
@@ -132,14 +142,14 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
    - Predict test set probabilities in correct order.
    - Return `(score, test_probs)`.
 
-########### TRANSFORMER REQUIREMENTS (MANDATORY) ###########
+## TRANSFORMER REQUIREMENTS (MANDATORY)
 - **Search space must include robust HF backbones** (released after 2023) in `pg.oneof`. 
 - **Always fine-tune before inference**: train the classifier head or the transformer layers with matching the target classes (e.g., explicitly set num_labels=NUM_LABELS in the config and pass ignore_mismatched_sizes=True).
 - **Runtime & robustness**: Enable **early stopping**; **OOM backoff** as specified above; call `torch.cuda.empty_cache()` and `gc.collect()` between trials.
 - **GPU memory**: Be mindful of GPU memory (48 GB). Mush choose models wisely to avoid OOM.  
 
 
-########### IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING) ###########
+## IMPLEMENTATION TIPS TO IMPROVE CODE QUALITY (CROSS-CUTTING)
 - Search space should be large: each pg.oneof should offer at least 10 options.
 - Separate train/val/test transforms; avoid leakage (fit scalers on train only).  
 - For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  

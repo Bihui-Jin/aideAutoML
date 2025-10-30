@@ -217,6 +217,7 @@ def full_search():
 
 if run_smoke_test:
     smoke_test()
+run_smoke_test = False
 full_search()
 # ----------------------------
 # Finished

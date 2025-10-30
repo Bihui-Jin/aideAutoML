@@ -1,20 +1,20 @@
 Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by **analyzing prior trials** and **refining the search space** to focus on what still matters. Then **fill in the given Python Code Template** (unchanged structure/signatures) with the refined PyGlove search space and Torch implementation to further boost prediction performance.
 
-########### STRICT RULES ###########
+## STRICT RULES
 - Do NOT change class/method names, signatures, or the outer NAS loop/timeout helper.
 - Do NOT add any new print/logging statements anywhere (including during CSV saving).
 - Use **PyTorch** for all neural networks and run on GPU if available (`DEVICE` is already set).
 - Use **PyGlove** for all search knobs. Do **NOT** pass `default` to `pg.oneof`. Every knob must be executable immediately (i.e., concrete candidate values).
 - Script must complete within ~30 minutes on a single GPU.
 
-########### INPUTS YOU CAN RELY ON ###########
+## INPUTS YOU CAN RELY ON
 - The **Task description**.
 - The **previously developed solution** (search space and code skeleton).
 - **Model performance** summary: suggestion for finalized and determining parameters. 
 - **Is the higher the better**: Yes, if the metric is the higher the better; Otherwise, No.
 - The **Python Code Template** (provided separately and must remain structurally intact).
 
-########### OBJECTIVES ###########
+## OBJECTIVES
 1) **Analyze "Model performance"**:
    - For these **finalized parameters** (no longer searched), lock them by using a **literal fixed value** in the Experiment constructor.
       - Examples: if `activation='gelu'` dominates, fix `activation='gelu'`. If `arch='wide_deep'` is consistently best, fix that and drop the others.

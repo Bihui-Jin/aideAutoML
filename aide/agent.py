@@ -381,10 +381,12 @@ class Agent:
         prompt: Any = {
             "Introduction": introduction,
             "Task description": match.group(0) if match else self.task_desc,
-            "Memory": self.journal.generate_summary(),
         }
+
+        if self.journal.generate_summary():
+            prompt["Memory"] = self.journal.generate_summary()
         if self.acfg.data_preview:
-            prompt["Data Overview"] = self.data_preview
+            prompt["Data overview"] = self.data_preview
         
         prompt["Instructions"] = {}
         prompt["Instructions"] |= self._prompt_resp_fmt
