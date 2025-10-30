@@ -436,20 +436,20 @@ class Agent:
         if match:
             if re.search(map_pattern, match.group(0), re.IGNORECASE):
                 prompt["Instructions"] |= {
-                    "Metric MAP implementation": MAP_at_k
+                    "Metric MAP implementation": wrap_code(MAP_at_k)
                 }
             if re.search(dice_pattern, match.group(0), re.IGNORECASE):
                 prompt["Instructions"] |= {
-                    "Metric Dice Coefficient implementation": dice_coefficient
+                    "Metric Dice Coefficient implementation": wrap_code(dice_coefficient)
                 }
         else:
             if re.search(map_pattern, self.task_desc, re.IGNORECASE):
                 prompt["Instructions"] |= {
-                    "Metric MAP implementation": MAP_at_k
+                    "Metric MAP implementation": wrap_code(MAP_at_k)
                 }
             if re.search(dice_pattern, self.task_desc, re.IGNORECASE):
                 prompt["Instructions"] |= {
-                    "Metric Dice Coefficient implementation": dice_coefficient
+                    "Metric Dice Coefficient implementation": wrap_code(dice_coefficient)
                 }
 
 
