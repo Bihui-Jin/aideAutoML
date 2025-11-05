@@ -40,16 +40,22 @@ class VerboseFilter(logging.Filter):
 def journal_to_rich_tree(journal: Journal):
     best_node = journal.get_best_node()
 
+    def fmt_metric(node: Node) -> str:
+        val = getattr(getattr(node, "metric", None), "value", None)
+        if isinstance(val, (int, float)):
+            return f"{val:.4f}"
+        return "N/A"
+    
     def append_rec(node: Node, tree):
         if node.is_buggy:
             s = "[red]◍ bug"
         else:
             style = "bold " if node is best_node else ""
-
+            metric_str = fmt_metric(node)
             if node is best_node:
-                s = f"[{style}green]● {node.metric.value:.3f} (best)"
+                s = f"[{style}green]● {metric_str} (best)"
             else:
-                s = f"[{style}green]● {node.metric.value:.3f}"
+                s = f"[{style}green]● {metric_str}"
 
         subtree = tree.add(s)
         for child in node.children:
@@ -65,6 +71,12 @@ def journal_to_string_tree(journal: Journal) -> str:
     best_node = journal.get_best_node()
     tree_str = "Solution tree\n"
 
+    def fmt_metric(node: Node) -> str:
+        val = getattr(getattr(node, "metric", None), "value", None)
+        if isinstance(val, (int, float)):
+            return f"{val:.4f}"
+        return "N/A"
+    
     def append_rec(node: Node, level: int):
         nonlocal tree_str
         indent = "  " * level
@@ -76,10 +88,11 @@ def journal_to_string_tree(journal: Journal) -> str:
             if node is best_node:
                 markers.append("best")
             marker_str = " & ".join(markers)
+            metric_str = fmt_metric(node)
             if marker_str:
-                s = f"{indent}● {node.metric.value:.3f} ({marker_str}) (ID: {node.id})\n"
+                s = f"{indent}● {metric_str} ({marker_str}) (ID: {node.id})\n"
             else:
-                s = f"{indent}● {node.metric.value:.3f} (ID: {node.id})\n"
+                s = f"{indent}● {metric_str} (ID: {node.id})\n"
         tree_str += s
         for child in node.children:
             append_rec(child, level + 1)
