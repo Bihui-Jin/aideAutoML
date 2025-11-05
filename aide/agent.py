@@ -201,11 +201,18 @@ class Agent:
         self.no_improvement_count = 0  # Add counter for consecutive non-improvements
         self.valid_improvement_count = 0  # Add counter for valid improvements
         self.run_smoke_test = True
+        self.force_new_draft = False
 
     def search_policy(self) -> Node | None:
         """Select a node to work on (or None to draft a new node)."""
         search_cfg = self.acfg.search
-    
+
+        # Extra: force draft on next selection (eg. worst->worst improve branch)
+        if getattr(self, "force_new_draft", False):
+            logger.info("[search policy] forced drafting new node due to worst->worst improve")
+            self.force_new_draft = False
+            return None
+        
         # initial drafting
         if len(self.journal.draft_nodes) < search_cfg.num_drafts:
             logger.info("[search policy] drafting new node (not enough drafts)")
@@ -1314,6 +1321,17 @@ class Agent:
                     logger.info(f"Node {result_node.id} is not the best node")
                     logger.info(f"Node {best_node.id} is still the best node")
             self.current_step += 1
+
+            # Extra stop-on-worst-improve logic
+            was_improve = (parent_node is not None and not parent_node.is_buggy)
+            def _is_worst(m): 
+                # the current node's (result_node) score is the worst (WorstMetricValue)
+                return isinstance(m, WorstMetricValue) or getattr(m, "value", None) is None
+            # the current node is improve node, and is worst metric, and has best node which is also worst metric
+            if was_improve and _is_worst(result_node.metric) and best_node is not None and _is_worst(best_node.metric):
+                logger.info("[step] worst result from improve and best is worst; forcing draft next")
+                self.force_new_draft = True
+
 
             if self.no_improvement_count >= self.acfg.max_no_improvement:
                 raise StopIteration(f"Early stopping: {self.acfg.max_no_improvement} consecutive nodes without improvement")
