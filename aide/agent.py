@@ -1416,7 +1416,7 @@ class Agent:
         node.is_buggy = (
             (response["is_bug"] and has_traceback)
             or node.exc_type is not None
-            or response["metric"] is None
+            # or response["metric"] is None
             or response["has_csv_submission"] == False
             or has_csv_submission == False
         )

@@ -1,0 +1,47 @@
+import pandas as pd
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import cross_val_score
+import matplotlib.pyplot as plt
+from xgboost import XGBClassifier
+
+
+#Daten laden
+df_train = pd.read_csv('/kaggle/input/playground-series-s3e18/train.csv')
+df_test = pd.read_csv('/kaggle/input/playground-series-s3e18/test.csv')
+
+
+#Trainings- und Testdaten vorbereiten
+y_train1 = df_train['EC1']
+y_train2 = df_train['EC2']
+X_train = df_train.drop(['EC1', 'EC2', 'EC3', 'EC4', 'EC5', 'EC6'], axis=1)
+
+
+#Modell mit Kreuzevaluation testen für verschiedene Baumtiefen (Optimum war i=8)
+score_list = []
+for i in range(1,10,1):
+#model = RandomForestClassifier(n_estimators=i*10, criterion='entropy', class_weight='balanced', max_depth=8, random_state=42)
+    model = XGBClassifier(max_depth=5, eta=i/100)
+    score = cross_val_score(model, X_train, y_train1, cv=5, scoring='roc_auc', verbose=0)
+    score_list.append(np.mean(score))
+print(score_list)
+plt.plot(score_list)
+
+
+model1 = XGBClassifier(eta=0.03, max_depth=3)
+model2 = XGBClassifier(eta=0.03, max_depth=3)
+
+model1.fit(X_train, y_train1)
+model2.fit(X_train, y_train2)
+
+y1_predict = model1.predict_proba(df_test)
+y2_predict = model2.predict_proba(df_test)
+
+
+df_submit = pd.read_csv('/kaggle/input/playground-series-s3e18/sample_submission.csv', index_col='id')
+df_submit['EC1'] = y1_predict[:,1]
+df_submit['EC2'] = y2_predict[:,1]
+df_submit.to_csv('submission.csv')
+

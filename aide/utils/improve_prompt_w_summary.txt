@@ -10,7 +10,7 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
 ########### INPUTS YOU CAN RELY ON ###########
 - The **Task description**.
 - The **previously developed solution** (search space and code skeleton).
-- A list of **Model performance** for many trials: for each trial, the chosen **Tested parameters settings** (architecture + hyperparameters) and its **metric** (Validation score).
+- **Model performance** summary: suggestion for finalized and determining parameters. 
 - **Is the higher the better**: True, if the metric is the higher the better; Otherwise, False.
 - **Failure Experience**: all previous experiment summary underperformed its parent solution.
 - The **Python Code Template** (provided separately and must remain structurally intact).

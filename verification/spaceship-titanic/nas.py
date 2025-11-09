@@ -18,6 +18,9 @@ import torch.nn.functional as F
 
 import wandb
 os.environ['WANDB_API_KEY'] = '51e19a7c4d2d6d577fd64d1d9e64a43fa83ccafa'
+# Disable WandB console output to avoid TTY issues
+os.environ['WANDB_CONSOLE'] = 'off'
+os.environ['WANDB_SILENT'] = 'true'
 
 # ----------------------------
 # Repro, Device, Utilities (kept from the template)
@@ -32,7 +35,6 @@ def set_seed(seed=42):
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 set_seed()
-
 
 # ----------------------------
 # Outer NAS loop with timeout (kept from the template)
@@ -117,7 +119,7 @@ class Experiment:
 
         # Fixed knobs
         self.val_size = 0.10
-        self.epochs = 7
+        self.epochs = 15
         self.batch_size = 256
         self.dropout = 0.05
         self.activation = "gelu"
@@ -255,6 +257,8 @@ class Experiment:
             enabled=(self.use_amp and torch.cuda.is_available())
         )
         criterion = nn.BCEWithLogitsLoss()
+
+
 
         # wandb log gradients automatically (optional)
         if self._wb_run is not None:
@@ -545,8 +549,8 @@ class Experiment:
     def _wandb_init(self):
         if self._wb_enabled and self._wb_run is None:
             self._wb_run = wandb.init(
-                project=os.getenv("WANDB_PROJECT", "mle-bench-nas"),
-                name=os.getenv("WANDB_RUN_NAME", f"exp-{os.getpid()}"),
+                project=os.getenv("WANDB_PROJECT", "spaceship-titanic"),
+                name=os.getenv("WANDB_RUN_NAME", f"nas-mlp-{os.getpid()}"),
                 config={
                     "arch": self.classic_arch,
                     "epochs": self.epochs,
@@ -558,6 +562,7 @@ class Experiment:
                     "val_size": self.val_size,
                     "lr": float(self.lr_),
                 },
+                settings=wandb.Settings(console="off", silent=True),
                 # set WANDB_MODE=offline if needed
             )
     
