@@ -417,6 +417,7 @@ class Agent:
                 cmd,
                 cwd=tmp, capture_output=True, text=True, env=env
             )
+            logging.info(f"Pyre return code: {r.returncode}, stdout: {r.stdout}, stderr: {r.stderr}")
             # Accept 0 (ok), 1/2 (type errors depending on build). Anything else is a true failure.
             if r.returncode not in (0, 1, 2) and not r.stdout.strip():
                 raise RuntimeError(r.stderr or r.stdout or f"pyre exited {r.returncode}")
