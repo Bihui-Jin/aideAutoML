@@ -405,7 +405,7 @@ class Agent:
             cmd = [
                 "pyre", "--noninteractive",
                 "--output", "json",
-                "--log-level", "ERROR",
+                # "--log-level", "ERROR",
                 # "--source-directory", ".",
                 # "--search-path", site_dir,
                 "check"
