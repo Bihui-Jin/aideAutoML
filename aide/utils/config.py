@@ -10,7 +10,7 @@ from typing import Any
 
 import coolname
 import rich
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig, ListConfig
 from rich.syntax import Syntax
 import shutup
 from rich.logging import RichHandler
@@ -104,177 +104,114 @@ def _get_next_logindex(dir: Path) -> int:
             pass
     return max_index + 1
 
-def _expand_roulette_models_arg(arg: str) -> list[str]:
-    """
-    Convert a single argument like:
-      agent.roulette_models=[{'model': 'gpt-5', 'weight': 1}, {'model': 'claude', 'weight': 2}]
-    into dotlist entries usable by OmegaConf:
-      agent.roulette_models[0].model=gpt-5
-      agent.roulette_models[0].weight=1
-      agent.roulette_models[1].model=claude
-      agent.roulette_models[1].weight=2
-    """
-    key, raw = arg.split("=", 1)
-    # Strip surrounding whitespace
-    raw = raw.strip()
-    # Try ast.literal_eval first (handles Python list/dict repr)
-    parsed: Any = None
+def _expand_python_list_arg(raw: str) -> list[dict]:
     try:
         parsed = ast.literal_eval(raw)
     except Exception:
-        # Fallback: attempt to coerce to JSON
         try:
-            fixed = raw.replace("'", '"')
-            parsed = json.loads(fixed)
+            parsed = json.loads(raw.replace("'", '"'))
         except Exception as e:
-            raise ValueError(f"Failed to parse {key} value: {raw} ({e})")
+            raise ValueError(f"Failed to parse roulette_models literal: {raw} ({e})")
     if not isinstance(parsed, list):
-        raise ValueError(f"{key} must be a list, got {type(parsed)}")
-    dotlist: list[str] = []
-    for i, item in enumerate(parsed):
+        raise ValueError("roulette_models must be a list")
+    out = []
+    for item in parsed:
         if not isinstance(item, dict) or "model" not in item or "weight" not in item:
-            raise ValueError(f"Each roulette model must be a dict with model & weight. Got: {item}")
-        dotlist.append(f"{key}[{i}].model={item['model']}")
-        dotlist.append(f"{key}[{i}].weight={item['weight']}")
-    return dotlist
+            raise ValueError(f"Invalid roulette_models entry: {item}")
+        out.append({"model": str(item["model"]), "weight": float(item["weight"])})
+    return out
 
-def _expand_roulette_models_compact(raw: str) -> list[str]:
-    """
-    Parse compact form:
-      gpt-5:1,claude-sonnet-4-5:1
-    → dotlist entries.
-    """
-    dotlist = []
-    if not raw:
-        return dotlist
-    for i, pair in enumerate(raw.split(",")):
-        if not pair:
-            continue
-        if ":" not in pair:
-            raise ValueError(f"Invalid roulette_models pair: {pair}")
-        model, weight = pair.split(":", 1)
-        dotlist.append(f"agent.roulette_models[{i}].model={model}")
-        dotlist.append(f"agent.roulette_models[{i}].weight={weight}")
-    return dotlist
-
-def _collect_roulette_models_tokens(start_token: str, rest: list[str]) -> tuple[str, int]:
-    """
-    Reassemble split tokens for python-list form:
-    agent.roulette_models=[{'model': 'gpt-5', 'weight': 1}, {'model': 'claude', 'weight': 1}]
-    Returns joined string and number of extra tokens consumed.
-    """
-    buf = [start_token]
-    consumed = 0
-    if start_token.rstrip().endswith("]"):
-        return start_token, consumed
-    for t in rest:
-        buf.append(t)
-        consumed += 1
-        if t.rstrip().endswith("]"):
-            break
-    return " ".join(buf), consumed
-
-def _process_cli_args(argv: list[str]) -> list[str]:
-    processed: list[str] = []
-    i = 0
-    while i < len(argv):
-        a = argv[i]
-        if a.startswith("agent.roulette_models="):
-            raw_value = a.split("=", 1)[1]
-            # Compact form?
-            if ":" in raw_value and "[" not in raw_value:
-                try:
-                    processed.extend(_expand_roulette_models_compact(raw_value))
-                except Exception as e:
-                    print(f"[config] Warning (compact) roulette_models parse failed: {e}")
-            else:
-                # Possibly split python-list form; reassemble
-                joined, consumed = _collect_roulette_models_tokens(a, argv[i+1:])
-                try:
-                    expanded = _expand_roulette_models_arg(joined)
-                    processed.extend(expanded)
-                except Exception as e:
-                    print(f"[config] Warning: could not parse roulette models '{joined}': {e}")
-                i += consumed
-        else:
-            processed.append(a)
-        i += 1
-    return processed
-
-def _normalize_roulette_models(cfg):
-    """
-    Convert compact string or list into list[dict] with model, weight.
-    Accepts formats:
-      "gpt-5:1,claude-sonnet-4-5:1"
-      [{'model': 'gpt-5', 'weight': 1}, {'model': 'claude-sonnet-4-5', 'weight': 1}]
-    """
-    try:
-        rm = cfg.agent.get("roulette_models", None)
-    except AttributeError:
-        return
-
-    if rm is None:
-        return
-
-    # Already structured (list of dicts) → leave
-    if isinstance(rm, list):
-        ok = all(isinstance(x, dict) and "model" in x and "weight" in x for x in rm)
-        if ok:
-            return
-
-    # Compact string form
-    if isinstance(rm, str):
-        items = []
-        for token in rm.split(","):
+def _parse_roulette_value(val: str) -> list[dict]:
+    # Compact form: model:weight,model:weight
+    if "[" not in val and "{" not in val:
+        models = []
+        for token in val.split(","):
             token = token.strip()
             if not token:
                 continue
             if ":" not in token:
-                print(f"[config] Skipping invalid roulette token: {token}")
-                continue
-            model, weight = token.split(":", 1)
-            model = model.strip()
-            try:
-                weight_f = float(weight)
-            except ValueError:
-                print(f"[config] Invalid weight in roulette token: {token}")
-                continue
-            items.append({"model": model, "weight": weight_f})
-        cfg.agent.roulette_models = items
-        return
+                raise ValueError(f"Invalid roulette token '{token}', expected model:weight")
+            m, w = token.split(":", 1)
+            models.append({"model": m.strip(), "weight": float(w.strip())})
+        return models
+    # Python / JSON list form
+    return _expand_python_list_arg(val)
 
-    # Python literal string (rare) fallback
-    if isinstance(rm, str) and rm.startswith("["):
-        try:
-            parsed = ast.literal_eval(rm)
-            if isinstance(parsed, list):
-                cfg.agent.roulette_models = parsed
-        except Exception:
-            pass
-        
+def _process_cli(argv: list[str]) -> dict:
+    overrides: dict[str, Any] = {}
+    i = 0
+    # Reassemble possible split tokens for python-list forms
+    while i < len(argv):
+        tok = argv[i]
+        if "=" not in tok:
+            i += 1
+            continue
+        key, val = tok.split("=", 1)
+        if key == "agent.roulette_models":
+            # If value seems incomplete (doesn't end with ]), collect until complete
+            if ("[" in val and "]" not in val) or ("{" in val and "}" not in val):
+                buf = [val]
+                j = i + 1
+                while j < len(argv) and "]" not in buf[-1]:
+                    buf.append(argv[j])
+                    j += 1
+                val = " ".join(buf)
+                i = j - 1
+            try:
+                overrides["agent.roulette_models"] = _parse_roulette_value(val)
+            except Exception as e:
+                print(f"[config] Warning: roulette_models parse failed ({e}); ignoring override.")
+        else:
+            overrides[key] = val
+        i += 1
+    return overrides
+
+def _apply_overrides(cfg: DictConfig, overrides: dict):
+    for k, v in overrides.items():
+        OmegaConf.update(cfg, k, v, force_add=True)
+
+def _coerce_roulette(cfg: DictConfig):
+    rm = cfg.agent.get("roulette_models", None)
+    if rm in (None, [], ()):
+        cfg.agent.roulette_models = []
+        return
+    # Already a list of dict/config objects
+    cleaned = []
+    for item in rm:
+        if isinstance(item, (DictConfig, dict)):
+            model = item.get("model")
+            weight = item.get("weight")
+            if model is None or weight is None:
+                continue
+            cleaned.append({"model": str(model), "weight": float(weight)})
+    cfg.agent.roulette_models = cleaned
+    
 def _load_cfg(
     path: Path = Path(__file__).parent / "config.yaml", use_cli_args=True
 ) -> Config:
-    cfg = OmegaConf.load(path)
+    base = OmegaConf.load(path)
+    if not isinstance(base, DictConfig):
+        raise TypeError(f"Base config at {path} must be a mapping, got {type(base)}")
     if use_cli_args:
-        raw_cli = sys.argv[1:]
-        dotlist = _process_cli_args(raw_cli)
-        cli_conf = OmegaConf.from_dotlist(dotlist)
-        # cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
-        cfg = OmegaConf.merge(cfg, cli_conf)
-    
-    # Normalize roulette before structured merge
-    _normalize_roulette_models(cfg)
-
-    # Structured validation & fill defaults
-    cfg_schema: Config = OmegaConf.structured(Config)
-    cfg = OmegaConf.merge(cfg_schema, cfg)
-
-    if cfg.agent.roulette_models is None:
-        cfg.agent.roulette_models = []
-    
-    return cast(Config, cfg)
-    # return cfg
+        overrides = _process_cli(sys.argv[1:])
+        if overrides:
+            _apply_overrides(base, overrides)
+    # Normalize roulette before struct schema
+    if "agent" in base:
+        _coerce_roulette(base)
+    # Build structured schema then merge (base last so its values override defaults)
+    schema = OmegaConf.structured(Config)
+    merged = OmegaConf.merge(schema, base)
+    # Final safety: ensure list type
+    if merged.agent.roulette_models is None:
+        merged.agent.roulette_models = []
+    # Cast entries to dataclass objects
+    rm_objs = []
+    for d in merged.agent.roulette_models:
+        if isinstance(d, (DictConfig, dict)) and "model" in d and "weight" in d:
+            rm_objs.append(RouletteModelConfig(model=str(d["model"]), weight=float(d["weight"])))
+    merged.agent.roulette_models = rm_objs
+    return cast(Config, merged)
 
 
 def load_cfg(path: Path = Path(__file__).parent / "config.yaml") -> Config:
@@ -285,36 +222,24 @@ def load_cfg(path: Path = Path(__file__).parent / "config.yaml") -> Config:
 def prep_cfg(cfg: Config):
     if cfg.data_dir is None:
         raise ValueError("`data_dir` must be provided.")
-
     if cfg.desc_file is None and cfg.goal is None:
-        raise ValueError(
-            "You must provide either a description of the task goal (`goal=...`) or a path to a plaintext file containing the description (`desc_file=...`)."
-        )
-
-    if cfg.data_dir.startswith("example_tasks/"):
-        cfg.data_dir = Path(__file__).parent.parent / cfg.data_dir
+        raise ValueError("Provide either `goal` or `desc_file`.")
+    if isinstance(cfg.data_dir, str):
+        cfg.data_dir = Path(cfg.data_dir)
     cfg.data_dir = Path(cfg.data_dir).resolve()
-
     if cfg.desc_file is not None:
         cfg.desc_file = Path(cfg.desc_file).resolve()
-
     top_log_dir = Path(cfg.log_dir).resolve()
     top_log_dir.mkdir(parents=True, exist_ok=True)
-
     top_workspace_dir = Path(cfg.workspace_dir).resolve()
     top_workspace_dir.mkdir(parents=True, exist_ok=True)
-
-    # generate experiment name and prefix with consecutive index
     cfg.exp_name = cfg.exp_name or coolname.generate_slug(3)
-
     cfg.log_dir = (top_log_dir / cfg.exp_name).resolve()
     cfg.workspace_dir = (top_workspace_dir / cfg.exp_name).resolve()
-
-    # validate the config
-    cfg_schema: Config = OmegaConf.structured(Config)
-    cfg = OmegaConf.merge(cfg_schema, cfg)
-
-    return cast(Config, cfg)
+    # Re-validate
+    schema = OmegaConf.structured(Config)
+    cfg = cast(Config, OmegaConf.merge(schema, cfg))
+    return cfg
 
 
 def print_cfg(cfg: Config) -> None:
