@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from typing import Hashable, cast
 
+import sys, ast
+from typing import Any
+
 import coolname
 import rich
 from omegaconf import OmegaConf
@@ -101,14 +104,73 @@ def _get_next_logindex(dir: Path) -> int:
             pass
     return max_index + 1
 
+def _expand_roulette_models_arg(arg: str) -> list[str]:
+    """
+    Convert a single argument like:
+      agent.roulette_models=[{'model': 'gpt-5', 'weight': 1}, {'model': 'claude', 'weight': 2}]
+    into dotlist entries usable by OmegaConf:
+      agent.roulette_models[0].model=gpt-5
+      agent.roulette_models[0].weight=1
+      agent.roulette_models[1].model=claude
+      agent.roulette_models[1].weight=2
+    """
+    key, raw = arg.split("=", 1)
+    # Strip surrounding whitespace
+    raw = raw.strip()
+    # Try ast.literal_eval first (handles Python list/dict repr)
+    parsed: Any = None
+    try:
+        parsed = ast.literal_eval(raw)
+    except Exception:
+        # Fallback: attempt to coerce to JSON
+        try:
+            fixed = raw.replace("'", '"')
+            parsed = json.loads(fixed)
+        except Exception as e:
+            raise ValueError(f"Failed to parse {key} value: {raw} ({e})")
+    if not isinstance(parsed, list):
+        raise ValueError(f"{key} must be a list, got {type(parsed)}")
+    dotlist: list[str] = []
+    for i, item in enumerate(parsed):
+        if not isinstance(item, dict) or "model" not in item or "weight" not in item:
+            raise ValueError(f"Each roulette model must be a dict with model & weight. Got: {item}")
+        dotlist.append(f"{key}[{i}].model={item['model']}")
+        dotlist.append(f"{key}[{i}].weight={item['weight']}")
+    return dotlist
+
+def _process_cli_args(argv: list[str]) -> list[str]:
+    processed: list[str] = []
+    for a in argv:
+        if a.startswith("agent.roulette_models="):
+            try:
+                expanded = _expand_roulette_models_arg(a)
+                processed.extend(expanded)
+            except Exception as e:
+                print(f"[config] Warning: could not parse roulette models '{a}': {e}")
+        else:
+            processed.append(a)
+    return processed
 
 def _load_cfg(
     path: Path = Path(__file__).parent / "config.yaml", use_cli_args=True
 ) -> Config:
     cfg = OmegaConf.load(path)
     if use_cli_args:
-        cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
-    return cfg
+        raw_cli = sys.argv[1:]
+        dotlist = _process_cli_args(raw_cli)
+        cli_conf = OmegaConf.from_dotlist(dotlist)
+        # cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
+        cfg = OmegaConf.merge(cfg, cli_conf)
+    
+    # Structured validation & fill defaults
+    cfg_schema: Config = OmegaConf.structured(Config)
+    cfg = OmegaConf.merge(cfg_schema, cfg)
+
+    if cfg.agent.roulette_models is None:
+        cfg.agent.roulette_models = []
+    
+    return cast(Config, cfg)
+    # return cfg
 
 
 def load_cfg(path: Path = Path(__file__).parent / "config.yaml") -> Config:
