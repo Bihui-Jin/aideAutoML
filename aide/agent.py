@@ -390,7 +390,7 @@ class Agent:
 
         # Where third-party stubs/packages live (so Pyre can import)
         site_dir = sysconfig.get_paths()["purelib"]
-        print(f"Using site dir: {site_dir}")
+        logging.info(f"Using site dir: {site_dir}")
         with tempfile.TemporaryDirectory() as tmp:
             # 1) project setup
             open(os.path.join(tmp, "snippet.py"), "w").write(textwrap.dedent(code))
@@ -410,10 +410,12 @@ class Agent:
                 # "--search-path", site_dir,
                 "check"
             ]
-
+            env = dict(os.environ)
+            # Help Pyre find third-party packages
+            env["PYTHONPATH"] = site_dir + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
             r = subprocess.run(
                 cmd,
-                cwd=tmp, capture_output=True, text=True
+                cwd=tmp, capture_output=True, text=True, env=env
             )
             # Accept 0 (ok), 1/2 (type errors depending on build). Anything else is a true failure.
             if r.returncode not in (0, 1, 2) and not r.stdout.strip():
