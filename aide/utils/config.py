@@ -37,6 +37,10 @@ class SearchConfig:
     debug_prob: float
     num_drafts: int
 
+@dataclass
+class RouletteModelConfig:
+    model: str
+    weight: float
 
 @dataclass
 class AgentConfig:
@@ -55,6 +59,8 @@ class AgentConfig:
     search: SearchConfig
 
     max_no_improvement: int
+    roulette_enabled: bool
+    roulette_models: list[RouletteModelConfig]
 
 @dataclass
 class ExecConfig:

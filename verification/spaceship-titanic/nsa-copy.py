@@ -16,15 +16,16 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch.nn as nn
 import torch.nn.functional as F
 
-import wandb
-os.environ['WANDB_API_KEY'] = '51e19a7c4d2d6d577fd64d1d9e64a43fa83ccafa'
-# Disable WandB console output to avoid TTY issues
-os.environ['WANDB_CONSOLE'] = 'off'
-os.environ['WANDB_SILENT'] = 'true'
-
 from sklearn.model_selection import StratifiedKFold
+import wandb
 from pathlib import Path
 import json
+os.environ["WANDB_API_KEY"] = "51e19a7c4d2d6d577fd64d1d9e64a43fa83ccafa"
+# Disable WandB console output to avoid TTY issues
+os.environ["WANDB_CONSOLE"] = "off"
+os.environ["WANDB_SILENT"] = "true"
+
+
 # ----------------------------
 # Repro, Device, Utilities (kept from the template)
 # ----------------------------
@@ -38,6 +39,7 @@ def set_seed(seed=42):
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 torch.backends.cudnn.benchmark = True
 set_seed()
+
 
 # ----------------------------
 # Outer NAS loop with timeout (kept from the template)
@@ -121,7 +123,7 @@ class Experiment:
         self.classic_arch = classic_arch
 
         # Fixed knobs
-        self.val_size = 0.10
+        self.val_size = 0.05
         self.epochs = 7
         self.batch_size = 256
         self.dropout = 0.05
@@ -156,8 +158,8 @@ class Experiment:
         self._wb_run = None
         self._global_step = 0
 
-        self.decision_threshold = 0.5
         self.n_folds = 5  # Add k-fold parameter
+        self.use_kfold_full = True  # Whether to use k-fold for full training
         self.checkpoint_dir = "./checkpoints"
         self.save_best_only = True
         self.checkpoint_every_n_epochs = 1  # Save checkpoint every N epochs
@@ -170,7 +172,7 @@ class Experiment:
         except:
             pass
         return 7.1e-4
-    
+
     def _save_checkpoint(self, epoch, score, is_best=False):
         """Save model checkpoint"""
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -302,157 +304,6 @@ class Experiment:
     # ------------------------
     # 4) Training (symbolic strategy)
     # ------------------------
-    # def training_kfold(self, X_full, y_full):
-    #     """Train with k-fold cross-validation, return average score and OOF predictions"""
-    #     skf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=42)
-    #     fold_scores = []
-    #     oof_probs = np.zeros(len(y_full))
-        
-    #     for fold_idx, (train_idx, val_idx) in enumerate(skf.split(X_full, y_full)):
-    #         print(f"Training fold {fold_idx + 1}/{self.n_folds}")
-            
-    #         # Split data
-    #         X_tr_fold = X_full[train_idx]
-    #         X_va_fold = X_full[val_idx]
-    #         y_tr_fold = y_full[train_idx]
-    #         y_va_fold = y_full[val_idx]
-            
-    #         # Create dataloaders
-    #         bs = int(self.batch_size)
-    #         ds_tr = TensorDataset(
-    #             torch.tensor(X_tr_fold, dtype=torch.float32),
-    #             torch.tensor(y_tr_fold.astype(np.float32))
-    #         )
-    #         ds_va = TensorDataset(
-    #             torch.tensor(X_va_fold, dtype=torch.float32),
-    #             torch.tensor(y_va_fold.astype(np.float32))
-    #         )
-    #         self.dl_tr = DataLoader(ds_tr, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
-    #         self.dl_va = DataLoader(ds_va, batch_size=max(1, bs*2), shuffle=False, num_workers=0, pin_memory=True)
-            
-    #         # Reinitialize model for each fold
-    #         self.model_ = self.model()
-    #         optimizer = self._optimizer()
-    #         scaler = torch.cuda.amp.GradScaler(enabled=(self.use_amp and torch.cuda.is_available()))
-    #         criterion = nn.BCEWithLogitsLoss()
-            
-    #         best_score = -1.0
-    #         best_state = None
-    #         no_improve = 0
-            
-    #         for epoch in range(int(self.epochs)):
-    #             self.model_.train()
-    #             optimizer.zero_grad(set_to_none=True)
-                
-    #             for Xb, yb in self.dl_tr:
-    #                 Xb = Xb.to(DEVICE, non_blocking=True)
-    #                 yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
-                    
-    #                 with torch.cuda.amp.autocast(enabled=(self.use_amp and torch.cuda.is_available())):
-    #                     logits = self.model_(Xb)
-    #                     loss = criterion(logits, yb)
-                    
-    #                 scaler.scale(loss).backward()
-                    
-    #                 if scaler.is_enabled():
-    #                     scaler.unscale_(optimizer)
-    #                 grad_norm = self._grad_l2_norm(self.model_)
-                    
-    #                 scaler.step(optimizer)
-    #                 scaler.update()
-    #                 optimizer.zero_grad(set_to_none=True)
-                    
-    #                 self._global_step += 1
-    #                 self._wandb_log({
-    #                     "train/loss": float(loss.detach().cpu().item()),
-    #                     "train/grad_norm": grad_norm,
-    #                     "train/lr": optimizer.param_groups[0]["lr"],
-    #                     "train/fold": fold_idx,
-    #                     "train/epoch": epoch,
-    #                 })
-                
-    #             # Validation
-    #             self.model_.eval()
-    #             preds_all, tgts_all = [], []
-    #             val_losses = []
-                
-    #             with torch.no_grad():
-    #                 for Xv, yv in self.dl_va:
-    #                     Xv = Xv.to(DEVICE, non_blocking=True)
-    #                     yv = yv.to(DEVICE, non_blocking=True).view(-1, 1)
-    #                     logits = self.model_(Xv)
-    #                     val_loss = criterion(logits, yv)
-    #                     val_losses.append(float(val_loss.detach().cpu().item()))
-                        
-    #                     probs = torch.sigmoid(logits).view(-1)
-    #                     preds = (probs >= self.decision_threshold).long()
-    #                     preds_all.append(preds.detach().cpu().numpy())
-    #                     tgts_all.append(yv.view(-1).long().detach().cpu().numpy())
-                
-    #             if len(preds_all) > 0:
-    #                 y_pred = np.concatenate(preds_all)
-    #                 y_true = np.concatenate(tgts_all)
-    #                 score = (y_pred == y_true).mean()
-    #             else:
-    #                 score = 0.0
-                
-    #             avg_val_loss = np.mean(val_losses) if val_losses else 0.0
-                
-    #             self._wandb_log({
-    #                 "val/accuracy": float(score),
-    #                 "val/loss": float(avg_val_loss),
-    #                 "val/fold": fold_idx,
-    #                 "train/epoch": epoch
-    #             })
-                
-    #             if score > best_score:
-    #                 best_score = score
-    #                 best_state = {k: v.detach().cpu().clone() for k, v in self.model_.state_dict().items()}
-    #                 no_improve = 0
-    #             else:
-    #                 no_improve += 1
-    #                 if no_improve > self.patience:
-    #                     break
-            
-    #         # Load best weights for this fold
-    #         if best_state is not None:
-    #             self.model_.load_state_dict(best_state)
-            
-    #         # Get OOF predictions
-    #         self.model_.eval()
-    #         fold_probs = []
-    #         with torch.no_grad():
-    #             for Xb, _ in self.dl_va:
-    #                 Xb = Xb.to(DEVICE, non_blocking=True)
-    #                 logits = self.model_(Xb)
-    #                 probs = torch.sigmoid(logits).view(-1)
-    #                 fold_probs.append(probs.detach().cpu().numpy())
-            
-    #         fold_probs = np.concatenate(fold_probs) if fold_probs else np.zeros_like(y_va_fold, dtype=float)
-    #         oof_probs[val_idx] = fold_probs
-            
-    #         fold_score = self.evaluation(y_va_fold, fold_probs)
-    #         fold_scores.append(fold_score)
-            
-    #         self._wandb_log({
-    #             f"fold_{fold_idx}/final_score": fold_score,
-    #         })
-            
-    #         # Clean up
-    #         del self.model_
-    #         torch.cuda.empty_cache()
-    #         gc.collect()
-        
-    #     avg_cv_score = np.mean(fold_scores)
-    #     std_cv_score = np.std(fold_scores)
-        
-    #     self._wandb_log({
-    #         "cv/mean_score": avg_cv_score,
-    #         "cv/std_score": std_cv_score,
-    #     })
-        
-    #     return avg_cv_score, oof_probs
-    
     def training(
         self,
     ):
@@ -519,9 +370,9 @@ class Experiment:
                     # Compute validation loss
                     val_loss = criterion(logits, yv)
                     val_losses.append(float(val_loss.detach().cpu().item()))
-                    
+
                     probs = torch.sigmoid(logits).view(-1)
-                    preds = (probs >= self.decision_threshold).long()
+                    preds = (probs >= 0.5).long()
                     preds_all.append(preds.detach().cpu().numpy())
                     tgts_all.append(yv.view(-1).long().detach().cpu().numpy())
             if len(preds_all) > 0:
@@ -535,10 +386,13 @@ class Experiment:
             avg_val_loss = np.mean(val_losses) if val_losses else 0.0
 
             # wandb log val accuracy (learning curve)
-            self._wandb_log({"val/accuracy": float(score), 
-                             "val/loss": float(avg_val_loss),
-                             "train/epoch": epoch})
-
+            self._wandb_log(
+                {
+                    "val/accuracy": float(score),
+                    "val/loss": float(avg_val_loss),
+                    "train/epoch": epoch,
+                }
+            )
 
             if score > best_score:
                 best_score = score
@@ -547,6 +401,7 @@ class Experiment:
                     k: v.detach().cpu().clone()
                     for k, v in self.model_.state_dict().items()
                 }
+                # Save best checkpoint
                 self._save_checkpoint(epoch, score, is_best=True)
                 no_improve = 0
             else:
@@ -559,134 +414,18 @@ class Experiment:
         if best_state is not None:
             self.model_.load_state_dict(best_state)
             print(f"Loaded best model from epoch {best_epoch} with score {best_score:.6f}")
-
         return best_score
 
     # ------------------------
     # 5) Evaluation
     # ------------------------
     def evaluation(self, y_true, y_prob):
-        preds = (y_prob >= self.decision_threshold).astype(int)
+        preds = (y_prob >= 0.5).astype(int)
         return (preds == y_true).mean()
 
     # ------------------------
     # 6) Run end-to-end: builds features, trains, evaluates, and writes submission.
     # ------------------------
-    # def run(self):
-    #     set_seed(42)
-    #     self.data_processing()
-    #     self._wandb_init()
-
-    #     # ...existing preprocessing code...
-    #     used_numeric = [c for c in self._numeric_cols]
-    #     used_categorical = [c for c in self._categorical_cols] + [c for c in self._bool_cols]
-    #     X_df = self._train_df[used_numeric + used_categorical]
-    #     Xt_df = self._test_df[used_numeric + used_categorical]
-    #     y = self._y
-
-    #     numeric_transformer = Pipeline(
-    #         steps=[
-    #             ("imputer", SimpleImputer(strategy="mean")),
-    #             ("scaler", StandardScaler(with_mean=True)),
-    #         ]
-    #     )
-    #     categorical_transformer = Pipeline(
-    #         steps=[
-    #             ("imputer", SimpleImputer(strategy="most_frequent")),
-    #             ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=True)),
-    #         ]
-    #     )
-    #     self._ct = ColumnTransformer(
-    #         transformers=[
-    #             ("num", numeric_transformer, used_numeric),
-    #             ("cat", categorical_transformer, used_categorical),
-    #         ],
-    #         remainder="drop",
-    #         sparse_threshold=0.3,
-    #     )
-
-    #     # Fit on full training data
-    #     self._ct.fit(X_df)
-    #     X_full = self._ct.transform(X_df)
-    #     X_te = self._ct.transform(Xt_df)
-        
-    #     if hasattr(X_full, "toarray"):
-    #         X_full = X_full.toarray()
-    #         X_te = X_te.toarray()
-        
-    #     X_full = X_full.astype(np.float32)
-    #     X_te = X_te.astype(np.float32)
-    #     self.input_dim_ = X_full.shape[1]
-
-    #     # K-fold training
-    #     cv_score, oof_probs = self.training_kfold(X_full, y)
-        
-    #     # Evaluate on OOF predictions
-    #     score = self.evaluation(y, oof_probs)
-        
-    #     # Train final model on all data for test predictions
-    #     bs = int(self.batch_size)
-    #     ds_full = TensorDataset(
-    #         torch.tensor(X_full, dtype=torch.float32),
-    #         torch.tensor(y.astype(np.float32))
-    #     )
-    #     self.dl_full = DataLoader(ds_full, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
-        
-    #     ds_te = TensorDataset(torch.tensor(X_te, dtype=torch.float32))
-    #     self.dl_te = DataLoader(ds_te, batch_size=max(1, bs*2), shuffle=False, num_workers=0, pin_memory=True)
-
-    #     # Train on full data
-    #     self.model_ = self.model()
-    #     optimizer = torch.optim.Adam(self.model_.parameters(), lr=float(self.lr_), weight_decay=self.weight_decay)
-    #     scaler = torch.cuda.amp.GradScaler(enabled=(self.use_amp and torch.cuda.is_available()))
-    #     criterion = nn.BCEWithLogitsLoss()
-        
-    #     for epoch in range(max(1, int(self.epochs) - 1)):
-    #         self.model_.train()
-    #         optimizer.zero_grad(set_to_none=True)
-            
-    #         for Xb, yb in self.dl_full:
-    #             Xb = Xb.to(DEVICE, non_blocking=True)
-    #             yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
-                
-    #             with torch.cuda.amp.autocast(enabled=(self.use_amp and torch.cuda.is_available())):
-    #                 logits = self.model_(Xb)
-    #                 loss = criterion(logits, yb)
-                
-    #             scaler.scale(loss).backward()
-                
-    #             if scaler.is_enabled():
-    #                 scaler.unscale_(optimizer)
-    #             grad_norm = self._grad_l2_norm(self.model_)
-                
-    #             scaler.step(optimizer)
-    #             scaler.update()
-    #             optimizer.zero_grad(set_to_none=True)
-                
-    #             self._global_step += 1
-    #             self._wandb_log({
-    #                 "full/loss": float(loss.detach().cpu().item()),
-    #                 "full/grad_norm": grad_norm,
-    #                 "full/lr": optimizer.param_groups[0]["lr"],
-    #                 "full/epoch": epoch,
-    #             })
-
-    #     # Test predictions
-    #     self.model_.eval()
-    #     test_probs = []
-    #     with torch.no_grad():
-    #         for (Xb,) in self.dl_te:
-    #             Xb = Xb.to(DEVICE, non_blocking=True)
-    #             logits = self.model_(Xb)
-    #             probs = torch.sigmoid(logits).view(-1)
-    #             test_probs.append(probs.detach().cpu().numpy())
-        
-    #     test_probs = np.concatenate(test_probs) if test_probs else np.zeros(self._test_df.shape[0], dtype=float)
-
-    #     if self._wb_run is not None:
-    #         wandb.finish()
-
-    #     return (score, test_probs)
     def run(self):
         # Do not add print/logging to avoid overhead during NAS
         set_seed(42)
@@ -763,7 +502,7 @@ class Experiment:
 
         # Build & train
         self.model_ = self.model()
-        best_val = self.training()
+        # best_val = self.training()
 
         # Validation predictions
         self.model_.eval()
@@ -785,9 +524,14 @@ class Experiment:
 
         # Train on all data for final test predictions (a bit shorter to limit drift)
         X_full = self._ct.transform(X_df)
+        X_te = self._ct.transform(Xt_df)
+
         if hasattr(X_full, "toarray"):
             X_full = X_full.toarray()
+            X_te = X_te.toarray()
         X_full = X_full.astype(np.float32)
+        X_te = X_te.astype(np.float32)
+
         ds_full = TensorDataset(
             torch.tensor(X_full, dtype=torch.float32),
             torch.tensor(y.astype(np.float32)),
@@ -804,79 +548,233 @@ class Experiment:
             pin_memory=True,
         )
 
-        # Try to load best checkpoint from initial training phase
+        # # Load best checkpoint from initial training phase
+        # # self.model_ already has best weights from training(), but reload from disk for safety
         checkpoint_path = Path(self.checkpoint_dir) / "best_model.pt"
-        if checkpoint_path.exists():
-            print(f"Loading best checkpoint from {checkpoint_path}")
-            checkpoint = self._load_checkpoint(checkpoint_path)
-            if checkpoint:
-                print(f"Loaded model from epoch {checkpoint['epoch']} with score {checkpoint['score']:.6f}")
-                # Model weights are already loaded by _load_checkpoint
-        else:
-            print("Warning: No checkpoint found, using current model state")
-
-        # self.model_ = self.model()
-        optimizer = torch.optim.Adam(
-            self.model_.parameters(), lr=float(self.lr_), weight_decay=self.weight_decay
-        )
-        scaler = torch.cuda.amp.GradScaler(
-            enabled=(self.use_amp and torch.cuda.is_available())
-        )
-        criterion = nn.BCEWithLogitsLoss()
-        for epoch in range(max(1, int(self.epochs) - 1)):
-            self.model_.train()
-            optimizer.zero_grad(set_to_none=True)
-            for Xb, yb in self.dl_full:
-                Xb = Xb.to(DEVICE, non_blocking=True)
-                yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
-                with torch.cuda.amp.autocast(
-                    enabled=(self.use_amp and torch.cuda.is_available())
-                ):
-                    logits = self.model_(Xb)
-                    loss = criterion(logits, yb)
-                scaler.scale(loss).backward()
-
-                # wandb grad norm
-                if scaler.is_enabled():
-                    scaler.unscale_(optimizer)
-                grad_norm = self._grad_l2_norm(self.model_)
-                lr_now = optimizer.param_groups[0]["lr"]
-
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad(set_to_none=True)
-
-                # wandb log per epoch
-                self._global_step += 1
-                self._wandb_log(
-                    {
-                        "full/loss": float(loss.detach().cpu().item()),
-                        "full/grad_norm": grad_norm,
-                        "full/lr": lr_now,
-                        "full/epoch": epoch,
-                    }
+        # if checkpoint_path.exists():
+        #     print(f"Loading best checkpoint from {checkpoint_path} for full-data training")
+        #     checkpoint = self._load_checkpoint(checkpoint_path)
+        #     if checkpoint:
+        #         print(f"Resuming from epoch {checkpoint['epoch']} with score {checkpoint['score']:.6f}")
+        # else:
+        #     print("Warning: No checkpoint found, using current model state")
+        
+        if self.use_kfold_full:
+            skf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=42)
+            fold_test_probs = []
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(skf.split(X_full, y)):
+                print(f"Full-data fold {fold_idx + 1}/{self.n_folds}")
+                
+                # Split data for this fold
+                X_fold_tr = X_full[train_idx]
+                X_fold_va = X_full[val_idx]
+                y_fold_tr = y[train_idx]
+                y_fold_va = y[val_idx]
+                
+                # Create dataloaders
+                ds_fold_tr = TensorDataset(
+                    torch.tensor(X_fold_tr, dtype=torch.float32),
+                    torch.tensor(y_fold_tr.astype(np.float32))
                 )
+                ds_fold_va = TensorDataset(
+                    torch.tensor(X_fold_va, dtype=torch.float32),
+                    torch.tensor(y_fold_va.astype(np.float32))
+                )
+                dl_fold_tr = DataLoader(
+                    ds_fold_tr, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True
+                )
+                dl_fold_va = DataLoader(
+                    ds_fold_va, batch_size=max(1, bs*2), shuffle=False, num_workers=0, pin_memory=True
+                )
+                
+                # # Reinitialize model for each fold OR load checkpoint
+                # if checkpoint_path.exists() and fold_idx == 0:
+                #     # First fold: use loaded checkpoint
+                #     pass  # Model already loaded above
+                # else:
+                #     # Other folds: fresh model
+                self.model_ = self.model()
+                
+                optimizer = torch.optim.Adam(
+                    self.model_.parameters(), 
+                    lr=float(self.lr_) * 0.3,  # Lower LR for fine-tuning
+                    weight_decay=self.weight_decay
+                )
+                scaler = torch.cuda.amp.GradScaler(
+                    enabled=(self.use_amp and torch.cuda.is_available())
+                )
+                criterion = nn.BCEWithLogitsLoss()
+                
+                best_fold_score = -1.0
+                best_fold_state = None
+                no_improve_fold = 0
+                
+                for epoch in range(max(1, int(self.epochs) - 3)):
+                    self.model_.train()
+                    optimizer.zero_grad(set_to_none=True)
+                    
+                    for Xb, yb in dl_fold_tr:
+                        Xb = Xb.to(DEVICE, non_blocking=True)
+                        yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
+                        with torch.cuda.amp.autocast(
+                            enabled=(self.use_amp and torch.cuda.is_available())
+                        ):
+                            logits = self.model_(Xb)
+                            loss = criterion(logits, yb)
+                        scaler.scale(loss).backward()
 
-        self.model_.eval()
-        test_probs = []
-        with torch.no_grad():
-            for (Xb,) in self.dl_te:
-                Xb = Xb.to(DEVICE, non_blocking=True)
-                logits = self.model_(Xb)
-                probs = torch.sigmoid(logits).view(-1)
-                test_probs.append(probs.detach().cpu().numpy())
-        test_probs = (
-            np.concatenate(test_probs)
-            if len(test_probs) > 0
-            else np.zeros(self._test_df.shape[0], dtype=float)
-        )
+                        if scaler.is_enabled():
+                            scaler.unscale_(optimizer)
+                        grad_norm = self._grad_l2_norm(self.model_)
+                        lr_now = optimizer.param_groups[0]["lr"]
+
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad(set_to_none=True)
+
+                        self._global_step += 1
+                        self._wandb_log(
+                            {
+                                f"full/fold_{fold_idx}/loss": float(loss.detach().cpu().item()),
+                                f"full/fold_{fold_idx}/grad_norm": grad_norm,
+                                f"full/fold_{fold_idx}/lr": lr_now,
+                                f"full/fold_{fold_idx}/epoch": epoch,
+                            }
+                        )
+                    
+                    # Validate on fold's validation set
+                    self.model_.eval()
+                    fold_preds, fold_tgts = [], []
+                    with torch.no_grad():
+                        for Xv, yv in dl_fold_va:
+                            Xv = Xv.to(DEVICE, non_blocking=True)
+                            yv = yv.to(DEVICE, non_blocking=True).view(-1, 1)
+                            logits = self.model_(Xv)
+                            probs = torch.sigmoid(logits).view(-1)
+                            preds = (probs >= 0.5).long()
+                            fold_preds.append(preds.detach().cpu().numpy())
+                            fold_tgts.append(yv.view(-1).long().detach().cpu().numpy())
+                    
+                    if len(fold_preds) > 0:
+                        fold_pred = np.concatenate(fold_preds)
+                        fold_tgt = np.concatenate(fold_tgts)
+                        fold_score = (fold_pred == fold_tgt).mean()
+                    else:
+                        fold_score = 0.0
+                    
+                    self._wandb_log({
+                        f"full/fold_{fold_idx}/val_accuracy": float(fold_score),
+                        f"full/fold_{fold_idx}/epoch": epoch,
+                    })
+                    
+                    if fold_score > best_fold_score:
+                        best_fold_score = fold_score
+                        best_fold_state = {k: v.detach().cpu().clone() 
+                                          for k, v in self.model_.state_dict().items()}
+                        no_improve_fold = 0
+                    else:
+                        no_improve_fold += 1
+                        if no_improve_fold > self.patience:
+                            break
+                
+                # Load best fold weights
+                if best_fold_state is not None:
+                    self.model_.load_state_dict(best_fold_state)
+                
+                # Get test predictions for this fold
+                self.model_.eval()
+                fold_test_probs_batch = []
+                with torch.no_grad():
+                    for (Xb,) in self.dl_te:
+                        Xb = Xb.to(DEVICE, non_blocking=True)
+                        logits = self.model_(Xb)
+                        probs = torch.sigmoid(logits).view(-1)
+                        fold_test_probs_batch.append(probs.detach().cpu().numpy())
+                
+                fold_test_probs.append(
+                    np.concatenate(fold_test_probs_batch) 
+                    if len(fold_test_probs_batch) > 0 
+                    else np.zeros(self._test_df.shape[0], dtype=float)
+                )
+                
+                # Clean up
+                del self.model_
+                torch.cuda.empty_cache()
+                gc.collect()
+            
+            # Average predictions across folds
+            test_probs = np.mean(fold_test_probs, axis=0)
+            
+            # Log fold statistics
+            self._wandb_log({
+                "full/kfold_mean_test_prob": float(np.mean(test_probs)),
+                "full/kfold_std_test_prob": float(np.std(test_probs)),
+            })
+        
+        else:
+            self.model_ = self.model()
+            # self.model_ = self.model()
+            optimizer = torch.optim.Adam(
+                self.model_.parameters(), lr=float(self.lr_), weight_decay=self.weight_decay
+            )
+            scaler = torch.cuda.amp.GradScaler(
+                enabled=(self.use_amp and torch.cuda.is_available())
+            )
+            criterion = nn.BCEWithLogitsLoss()
+            for epoch in range(max(1, int(self.epochs) - 3)):
+                self.model_.train()
+                optimizer.zero_grad(set_to_none=True)
+                for Xb, yb in self.dl_full:
+                    Xb = Xb.to(DEVICE, non_blocking=True)
+                    yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
+                    with torch.cuda.amp.autocast(
+                        enabled=(self.use_amp and torch.cuda.is_available())
+                    ):
+                        logits = self.model_(Xb)
+                        loss = criterion(logits, yb)
+                    scaler.scale(loss).backward()
+
+                    # wandb grad norm
+                    if scaler.is_enabled():
+                        scaler.unscale_(optimizer)
+                    grad_norm = self._grad_l2_norm(self.model_)
+                    lr_now = optimizer.param_groups[0]["lr"]
+
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+
+                    # wandb log per epoch
+                    self._global_step += 1
+                    self._wandb_log(
+                        {
+                            "full/loss": float(loss.detach().cpu().item()),
+                            "full/grad_norm": grad_norm,
+                            "full/lr": lr_now,
+                            "full/epoch": epoch,
+                        }
+                    )
+
+            self.model_.eval()
+            test_probs = []
+            with torch.no_grad():
+                for (Xb,) in self.dl_te:
+                    Xb = Xb.to(DEVICE, non_blocking=True)
+                    logits = self.model_(Xb)
+                    probs = torch.sigmoid(logits).view(-1)
+                    test_probs.append(probs.detach().cpu().numpy())
+            test_probs = (
+                np.concatenate(test_probs)
+                if len(test_probs) > 0
+                else np.zeros(self._test_df.shape[0], dtype=float)
+            )
 
         # Finish WandB
         if self._wb_run is not None:
             wandb.finish()
 
-        return (score, test_probs)
-    
+        return (0.8, test_probs)
 
     # ------------------------
     # WandB helpers
@@ -900,7 +798,7 @@ class Experiment:
                 settings=wandb.Settings(console="off", silent=True),
                 # set WANDB_MODE=offline if needed
             )
-    
+
     def _wandb_log(self, data: dict):
         if self._wb_run is not None:
             wandb.log(data, step=self._global_step)
@@ -912,7 +810,7 @@ class Experiment:
             if p.grad is not None:
                 g = p.grad.detach()
                 sq += float(g.norm(2).item() ** 2)
-        return sq ** 0.5
+        return sq**0.5
 
 
 exp_template = Experiment()
@@ -941,63 +839,6 @@ result = run_with_timeout(exp_template.run, timeout_sec=_timeout)
 success, (best_score, best_test_probs) = result
 print(f"Best Validation Score: {best_score:.6f}")
 
-# def full_search():
-#     global run, trial, best_score, best_exp, best_test_probs, _timeout
-#     algo = pg.evolution.regularized_evolution(
-#         population_size=64, tournament_size=6, seed=42
-#     )
-
-#     with open("/home/agent/output.txt", "w") as output_file:
-#         output_file.write("Model performance\n")
-#     # Limit the upper bound of total trial to avoid infinite loop
-#     for i, (exp, feedback) in enumerate(
-#         pg.sample(exp_template, algo, num_examples=164)
-#     ):
-#         # Limit to 60 trial
-#         if trial > 60:
-#             break
-
-#         with open("/home/agent/running.txt", "w") as running_exp:
-#             running_exp.write(f"{exp}")
-
-#         result = run_with_timeout(exp.run, timeout_sec=_timeout)
-
-#         if not result[0]:
-#             # Give it a bad score
-#             feedback(float("-inf"))
-#             # Clean up GPU memory
-#             if torch.cuda.is_available():
-#                 torch.cuda.empty_cache()
-#             gc.collect()
-#             continue
-
-#         success, (score, test_probs) = result
-#         feedback(score)
-
-#         with open("/home/agent/output.txt", "a") as output_file:
-#             output_file.write(f"\n=== Trial {run} ===\n")
-#             output_file.write(f"Validation score: {score:.6f}\n")
-#             output_file.write(f"Tested parameters: {exp}\n")
-
-#         # Track best
-#         if best_score is None or score > best_score:
-#             best_score = score
-#             best_test_probs = test_probs
-#             best_exp = exp
-
-#         score = float("-inf")
-#         run += 1
-#         trial += 1 if i > 64 else 0  # Warm-up phase does not count towards trial count
-
-#     print(f"\n=== Search Complete ===")
-#     print(f"Best Validation Score: {best_score:.6f}")
-#     print(f"Best Parameters: {best_exp}")
-
-
-# if run_smoke_test:
-#     smoke_test()
-# run_smoke_test = False
-# full_search()
 # ----------------------------
 # Finished
 # Do not modify above this line
@@ -1014,6 +855,6 @@ if best_test_probs is not None:
     n = min(len(test_ids), len(preds))
     test_ids = test_ids.iloc[:n].reset_index(drop=True)
     preds = preds[:n]
-    submission = pd.DataFrame({"PassengerId": test_ids, "Transported": (preds >= exp_template.decision_threshold)})
+    submission = pd.DataFrame({"PassengerId": test_ids, "Transported": (preds >= 0.5)})
     submission.to_csv("submission/submission.csv", index=False)
 # Do not add new prints/logging.

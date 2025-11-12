@@ -9,6 +9,9 @@ from typing import Any, Callable, cast
 import subprocess
 import json
 
+import tempfile
+import sysconfig
+import textwrap
 import os
 import re
 
@@ -320,9 +323,20 @@ class Agent:
         query_kwargs = {
             "system_message": prompt,
             "user_message": None,
-            "model": self.acfg.code.model if qType != "_debug" else self.acfg.debug.model,
             "convert_system_to_user": self.acfg.convert_system_to_user,
         }
+
+        logger.info("convert_system_to_user: ", self.acfg.convert_system_to_user)
+
+        if self.acfg.roulette_enabled:
+            models = [cfg.model for cfg in self.acfg.roulette_models]
+            weights = [cfg.weight for cfg in self.acfg.roulette_models]
+            
+            # Randomly select one model based on weights
+            query_kwargs["model"] = random.choices(models, weights=weights, k=1)[0]
+        else:
+            query_kwargs["model"] = self.acfg.code.model if qType != "_debug" else self.acfg.debug.model
+
 
         if query_kwargs["model"] != "gpt-5":
             query_kwargs["temperature"] = self.acfg.code.temp
@@ -368,6 +382,25 @@ class Agent:
         completion_text = query(**query_kwargs)
 
         return  completion_text
+    
+    def run_pyre_on_string(code: str, py_version="3.11"):
+        with tempfile.TemporaryDirectory() as d:
+            site = sysconfig.get_paths()["purelib"]
+            open(os.path.join(d, ".pyre_configuration"), "w").write(
+                json.dumps({
+                    "source_directories": ["."],
+                    "python_version": py_version,
+                    "search_path": [site]
+                })
+            )
+            open(os.path.join(d, "snippet.py"), "w").write(textwrap.dedent(code))
+            r = subprocess.run(
+                ["pyre", "--noninteractive", "check", "--output=json"],
+                cwd=d, capture_output=True, text=True
+            )
+            if r.returncode not in (0, 2):  # 2 = type errors found
+                raise RuntimeError(r.stderr or r.stdout)
+            return json.loads(r.stdout)
 
     def _draft(self) -> Node:
         introduction = (
@@ -1138,6 +1171,8 @@ class Agent:
                 logger.info("Using provided initial code for the first step:\nPlan:{nl_text}\nCode:{code}".format(code=code, nl_text=nl_text))
                 # Create initial node from provided code
                 initial_node = Node(plan=nl_text, code=code)
+
+                logging.info("Syntax Checker:\n", self.run_pyre_on_string(initial_node.code))
                 # Execute and evaluate the initial code immediately
                 initial_node = self.parse_exec_result(
                             node=initial_node,
