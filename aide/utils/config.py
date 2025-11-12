@@ -138,17 +138,67 @@ def _expand_roulette_models_arg(arg: str) -> list[str]:
         dotlist.append(f"{key}[{i}].weight={item['weight']}")
     return dotlist
 
+def _expand_roulette_models_compact(raw: str) -> list[str]:
+    """
+    Parse compact form:
+      gpt-5:1,claude-sonnet-4-5:1
+    → dotlist entries.
+    """
+    dotlist = []
+    if not raw:
+        return dotlist
+    for i, pair in enumerate(raw.split(",")):
+        if not pair:
+            continue
+        if ":" not in pair:
+            raise ValueError(f"Invalid roulette_models pair: {pair}")
+        model, weight = pair.split(":", 1)
+        dotlist.append(f"agent.roulette_models[{i}].model={model}")
+        dotlist.append(f"agent.roulette_models[{i}].weight={weight}")
+    return dotlist
+
+def _collect_roulette_models_tokens(start_token: str, rest: list[str]) -> tuple[str, int]:
+    """
+    Reassemble split tokens for python-list form:
+    agent.roulette_models=[{'model': 'gpt-5', 'weight': 1}, {'model': 'claude', 'weight': 1}]
+    Returns joined string and number of extra tokens consumed.
+    """
+    buf = [start_token]
+    consumed = 0
+    if start_token.rstrip().endswith("]"):
+        return start_token, consumed
+    for t in rest:
+        buf.append(t)
+        consumed += 1
+        if t.rstrip().endswith("]"):
+            break
+    return " ".join(buf), consumed
+
 def _process_cli_args(argv: list[str]) -> list[str]:
     processed: list[str] = []
-    for a in argv:
+    i = 0
+    while i < len(argv):
+        a = argv[i]
         if a.startswith("agent.roulette_models="):
-            try:
-                expanded = _expand_roulette_models_arg(a)
-                processed.extend(expanded)
-            except Exception as e:
-                print(f"[config] Warning: could not parse roulette models '{a}': {e}")
+            raw_value = a.split("=", 1)[1]
+            # Compact form?
+            if ":" in raw_value and "[" not in raw_value:
+                try:
+                    processed.extend(_expand_roulette_models_compact(raw_value))
+                except Exception as e:
+                    print(f"[config] Warning (compact) roulette_models parse failed: {e}")
+            else:
+                # Possibly split python-list form; reassemble
+                joined, consumed = _collect_roulette_models_tokens(a, argv[i+1:])
+                try:
+                    expanded = _expand_roulette_models_arg(joined)
+                    processed.extend(expanded)
+                except Exception as e:
+                    print(f"[config] Warning: could not parse roulette models '{joined}': {e}")
+                i += consumed
         else:
             processed.append(a)
+        i += 1
     return processed
 
 def _load_cfg(
