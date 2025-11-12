@@ -334,9 +334,9 @@ class Agent:
             
             # Randomly select one model based on weights
             query_kwargs["model"] = random.choices(models, weights=weights, k=1)[0]
+            logging.info(f"Randomly selected model for {qType}: {query_kwargs['model']}")
         else:
             query_kwargs["model"] = self.acfg.code.model if qType != "_debug" else self.acfg.debug.model
-
 
         if query_kwargs["model"] != "gpt-5":
             query_kwargs["temperature"] = self.acfg.code.temp
@@ -397,7 +397,7 @@ class Agent:
             open(os.path.join(tmp, ".pyre_configuration"), "w").write(json.dumps({
                 "source_directories": ["."],
                 "python_version": py_version,
-                "search_path": [site_dir],
+                # "search_path": [site_dir],
                 # "site_package_search_strategy": "pep561",
             }))
 
@@ -410,12 +410,9 @@ class Agent:
                 # "--search-path", site_dir,
                 "check"
             ]
-            env = dict(os.environ)
-            # Help Pyre find third-party packages
-            env["PYTHONPATH"] = site_dir + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
             r = subprocess.run(
                 cmd,
-                cwd=tmp, capture_output=True, text=True, env=env
+                cwd=tmp, capture_output=True, text=True
             )
             logging.info(f"Pyre return code: {r.returncode}, stdout: {r.stdout}, stderr: {r.stderr}")
             # Accept 0 (ok), 1/2 (type errors depending on build). Anything else is a true failure.
@@ -1194,7 +1191,7 @@ class Agent:
                 initial_node = Node(plan=nl_text, code=code)
 
                 logging.info(f"Roulette Models:\n{[cfg.model for cfg in self.acfg.roulette_models]}")
-                # logging.info(f"Syntax Checker:\n{self.run_pyre_on_string(initial_node.code)}")
+                logging.info(f"Syntax Checker:\n{self.run_pyre_on_string(initial_node.code)}")
                 # Execute and evaluate the initial code immediately
                 initial_node = self.parse_exec_result(
                             node=initial_node,
