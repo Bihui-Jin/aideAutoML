@@ -1172,6 +1172,7 @@ class Agent:
                 # Create initial node from provided code
                 initial_node = Node(plan=nl_text, code=code)
 
+                logging.info("Roulette Models: ", [cfg.model for cfg in self.acfg.roulette_models])
                 logging.info("Syntax Checker:\n", self.run_pyre_on_string(initial_node.code))
                 # Execute and evaluate the initial code immediately
                 initial_node = self.parse_exec_result(
