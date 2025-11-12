@@ -201,6 +201,57 @@ def _process_cli_args(argv: list[str]) -> list[str]:
         i += 1
     return processed
 
+def _normalize_roulette_models(cfg):
+    """
+    Convert compact string or list into list[dict] with model, weight.
+    Accepts formats:
+      "gpt-5:1,claude-sonnet-4-5:1"
+      [{'model': 'gpt-5', 'weight': 1}, {'model': 'claude-sonnet-4-5', 'weight': 1}]
+    """
+    try:
+        rm = cfg.agent.get("roulette_models", None)
+    except AttributeError:
+        return
+
+    if rm is None:
+        return
+
+    # Already structured (list of dicts) → leave
+    if isinstance(rm, list):
+        ok = all(isinstance(x, dict) and "model" in x and "weight" in x for x in rm)
+        if ok:
+            return
+
+    # Compact string form
+    if isinstance(rm, str):
+        items = []
+        for token in rm.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if ":" not in token:
+                print(f"[config] Skipping invalid roulette token: {token}")
+                continue
+            model, weight = token.split(":", 1)
+            model = model.strip()
+            try:
+                weight_f = float(weight)
+            except ValueError:
+                print(f"[config] Invalid weight in roulette token: {token}")
+                continue
+            items.append({"model": model, "weight": weight_f})
+        cfg.agent.roulette_models = items
+        return
+
+    # Python literal string (rare) fallback
+    if isinstance(rm, str) and rm.startswith("["):
+        try:
+            parsed = ast.literal_eval(rm)
+            if isinstance(parsed, list):
+                cfg.agent.roulette_models = parsed
+        except Exception:
+            pass
+        
 def _load_cfg(
     path: Path = Path(__file__).parent / "config.yaml", use_cli_args=True
 ) -> Config:
@@ -212,6 +263,9 @@ def _load_cfg(
         # cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
         cfg = OmegaConf.merge(cfg, cli_conf)
     
+    # Normalize roulette before structured merge
+    _normalize_roulette_models(cfg)
+
     # Structured validation & fill defaults
     cfg_schema: Config = OmegaConf.structured(Config)
     cfg = OmegaConf.merge(cfg_schema, cfg)
