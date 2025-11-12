@@ -383,7 +383,7 @@ class Agent:
 
         return  completion_text
     
-    def run_pyre_on_string(code: str, py_version="3.11"):
+    def run_pyre_on_string(self, code: str, py_version="3.11"):
         """[{'line': 8, 'column': 0, 'stop_line': 8, 'stop_column': 3, 'path': 'test.py', 'code': 16, 'name': 'Undefined attribute', 'description': 'Undefined attribute [16]: `typing.Type` has no attribute `c`.', 'concise_description': 'Undefined attribute [16]: `type` has no attribute `c`.'}, {'line': 9, 'column': 0, 'stop_line': 9, 'stop_column': 3, 'path': 'test.py', 'code': 16, 'name': 'Undefined attribute', 'description': 'Undefined attribute [16]: `typing.Type` has no attribute `d`.', 'concise_description': 'Undefined attribute [16]: `type` has no attribute `d`.'}]"""
         if shutil.which("pyre") is None:
             raise RuntimeError("pyre executable not found. Did you `pip install pyre-check`?")
@@ -393,12 +393,12 @@ class Agent:
         print(f"Using site dir: {site_dir}")
         with tempfile.TemporaryDirectory() as tmp:
             # 1) project setup
-            open(os.path.join(tmp, "test.py"), "w").write(textwrap.dedent(code))
+            open(os.path.join(tmp, "snippet.py"), "w").write(textwrap.dedent(code))
             open(os.path.join(tmp, ".pyre_configuration"), "w").write(json.dumps({
                 "source_directories": ["."],
                 "python_version": py_version,
                 "search_path": [site_dir],
-                "site_package_search_strategy": "pep561",
+                # "site_package_search_strategy": "pep561",
             }))
 
             # 2) run pyre check with explicit source directory (robust across Pyre versions)
