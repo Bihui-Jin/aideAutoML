@@ -383,7 +383,7 @@ class Agent:
 
         return  completion_text
     
-    def run_pyre_on_string(code: str, py_version="3.11"):
+    def run_pyre_on_string(self, code: str, py_version="3.11"):
         with tempfile.TemporaryDirectory() as d:
             site = sysconfig.get_paths()["purelib"]
             open(os.path.join(d, ".pyre_configuration"), "w").write(
