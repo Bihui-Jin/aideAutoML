@@ -1194,7 +1194,7 @@ class Agent:
                 initial_node = Node(plan=nl_text, code=code)
 
                 logging.info(f"Roulette Models:\n{[cfg.model for cfg in self.acfg.roulette_models]}")
-                logging.info(f"Syntax Checker:\n{self.run_pyre_on_string(initial_node.code)}")
+                # logging.info(f"Syntax Checker:\n{self.run_pyre_on_string(initial_node.code)}")
                 # Execute and evaluate the initial code immediately
                 initial_node = self.parse_exec_result(
                             node=initial_node,
