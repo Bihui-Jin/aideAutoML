@@ -403,7 +403,7 @@ class Agent:
                 "source_directories": ["."],
                 "python_version": py_version,
                 "search_path": [str(site_dir)],
-                "strict": True,
+                # "strict": True,
                 # "site_package_search_strategy": "pep561",
             }))
 
