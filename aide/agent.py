@@ -389,7 +389,9 @@ class Agent:
         if shutil.which("pyre") is None:
             raise RuntimeError("pyre executable not found. Did you `pip install pyre-check`?")
 
-        prefix = Path(os.environ.get("CONDA_PREFIX", sysconfig.get_path("purelib")).rstrip("/lib/python3.11/site-packages"))
+        env_info = json.loads(subprocess.check_output(["conda", "env", "list", "--json"]))
+        envs = env_info["envs"]
+        prefix = envs[-1]
         logging.info(f"pyre prefix: {prefix}")
         # Where third-party stubs/packages live (so Pyre can import)
         site_dir = prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
@@ -1445,7 +1447,7 @@ class Agent:
             query_kwargs["model"] = self.acfg.feedback.model
 
 
-        if self.acfg.feedback.model != "gpt-5":
+        if query_kwargs["model"] != "gpt-5":
             query_kwargs["temperature"] = self.acfg.feedback.temp
 
         response = cast(
