@@ -405,6 +405,7 @@ class Agent:
                 "search_path": [str(site_dir)],
                 # "strict": True,
                 # "site_package_search_strategy": "pep561",
+                "site_package_search_strategy": "all",
             }))
 
             # 2) run pyre check with explicit source directory (robust across Pyre versions)
