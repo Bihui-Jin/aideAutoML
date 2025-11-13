@@ -394,7 +394,7 @@ class Agent:
         prefix = envs[-1]
         logging.info(f"pyre prefix: {prefix}")
         # Where third-party stubs/packages live (so Pyre can import)
-        site_dir = prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+        site_dir = Path(prefix) / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
         logging.info(f"Using site dir: {site_dir}")
         with tempfile.TemporaryDirectory() as tmp:
             # 1) project setup
