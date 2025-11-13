@@ -13,6 +13,7 @@ import tempfile
 import sysconfig
 import textwrap
 import os
+import sys
 import re
 
 import humanize
@@ -388,8 +389,10 @@ class Agent:
         if shutil.which("pyre") is None:
             raise RuntimeError("pyre executable not found. Did you `pip install pyre-check`?")
 
+        prefix = Path(os.environ.get("CONDA_PREFIX", sysconfig.get_path("purelib")).rstrip("/lib/python3.11/site-packages"))
+        logging.info(f"pyre prefix: {prefix}")
         # Where third-party stubs/packages live (so Pyre can import)
-        site_dir = sysconfig.get_paths()["purelib"]
+        site_dir = prefix / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
         logging.info(f"Using site dir: {site_dir}")
         with tempfile.TemporaryDirectory() as tmp:
             # 1) project setup
@@ -397,7 +400,8 @@ class Agent:
             open(os.path.join(tmp, ".pyre_configuration"), "w").write(json.dumps({
                 "source_directories": ["."],
                 "python_version": py_version,
-                # "search_path": [site_dir],
+                "search_path": [str(site_dir)],
+                "strict": True,
                 # "site_package_search_strategy": "pep561",
             }))
 
@@ -414,7 +418,7 @@ class Agent:
                 cmd,
                 cwd=tmp, capture_output=True, text=True
             )
-            logging.info(f"Pyre return code: {r.returncode}, stdout: {r.stdout}, stderr: {r.stderr}")
+            # logging.info(f"Pyre return code: {r.returncode}, stdout: {r.stdout}, stderr: {r.stderr}")
             # Accept 0 (ok), 1/2 (type errors depending on build). Anything else is a true failure.
             if r.returncode not in (0, 1, 2) and not r.stdout.strip():
                 raise RuntimeError(r.stderr or r.stdout or f"pyre exited {r.returncode}")
@@ -1421,13 +1425,25 @@ class Agent:
             "Execution output": wrap_code(node.term_out, lang=""),
         }
 
+        
         query_kwargs = {
             "system_message": prompt,
             "user_message": None,
             "func_spec": review_func_spec,
-            "model": self.acfg.feedback.model,
+            # "model": self.acfg.feedback.model,
             "convert_system_to_user": self.acfg.convert_system_to_user,
         }
+
+        if self.acfg.roulette_enabled and self.acfg.roulette_models:
+            models = [cfg.model for cfg in self.acfg.roulette_models]
+            weights = [cfg.weight for cfg in self.acfg.roulette_models]
+            
+            # Randomly select one model based on weights
+            query_kwargs["model"] = random.choices(models, weights=weights, k=1)[0]
+            logging.info(f"Randomly selected model for parsing: {query_kwargs['model']}")
+        else:
+            query_kwargs["model"] = self.acfg.feedback.model
+
 
         if self.acfg.feedback.model != "gpt-5":
             query_kwargs["temperature"] = self.acfg.feedback.temp
