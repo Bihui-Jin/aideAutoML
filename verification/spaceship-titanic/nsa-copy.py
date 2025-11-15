@@ -20,6 +20,7 @@ from sklearn.model_selection import StratifiedKFold
 import wandb
 from pathlib import Path
 import json
+from torch.optim.lr_scheduler import CosineAnnealingLR
 os.environ["WANDB_API_KEY"] = "51e19a7c4d2d6d577fd64d1d9e64a43fa83ccafa"
 # Disable WandB console output to avoid TTY issues
 os.environ["WANDB_CONSOLE"] = "off"
@@ -88,7 +89,18 @@ class MLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
-        return self.net(x).view(-1, 1)
+        # If batch_size == 1 and we are in training mode,
+        # skip BatchNorm1d to avoid "Expected more than 1 value per channel" error.
+        if self.training and x.size(0) == 1:
+            out = x
+            for layer in self.net:
+                if isinstance(layer, nn.BatchNorm1d):
+                    # Skip BN when batch size is 1 during training
+                    continue
+                out = layer(out)
+            return out.view(-1, 1)
+        else:
+            return self.net(x).view(-1, 1)
 
 
 # ----------------------------
@@ -99,17 +111,16 @@ class Experiment:
     def __init__(
         self,
         # --- Model search knobs ---
-        classic_arch="mlp@lr=0.000700",
-        # pg.oneof(
-        #     [
-        #         # Encode LR choices into the architecture token to keep signature unchanged.
-        #         "mlp@lr=0.000700",
-        #         "mlp@lr=0.000705",
-        #         "mlp@lr=0.000710",
-        #         "mlp@lr=0.000715",
-        #         "mlp@lr=0.000720",
-        #     ]
-        # ),
+        classic_arch= pg.oneof(
+            [
+                # Encode LR choices into the architecture token to keep signature unchanged.
+                "mlp@lr=0.000600",
+                "mlp@lr=0.000625",
+                "mlp@lr=0.000650",
+                "mlp@lr=0.000675",
+                "mlp@lr=0.000700",
+            ]
+        ),
         # Transformer-specific (fixed and unused here)
         hf_backbone="intfloat/e5-small-v2",
         # pg.oneof(
@@ -117,20 +128,27 @@ class Experiment:
         #         "intfloat/e5-small-v2",
         #     ]
         # ),
+        val_size = pg.oneof([0.05, 0.1]),
+        batch_size = pg.oneof([1, 64, 75, 256]),
+        dropout = pg.oneof([0.0, 0.025, 0.05, 0.075, 0.1, 0.125, 0.15]),
+        weight_decay = pg.oneof([0, 2e-4, 1e-4, 5e-5, 1e-5]),
+        hidden_sizes = pg.oneof([(1024, 512, 256), (512, 512, 512, 512), (512, 512, 256, 128), (512, 512, 512), (1024, 512, 256, 128)]),
+
     ):
         # Assign
         self.hf_backbone = hf_backbone
         self.classic_arch = classic_arch
 
         # Fixed knobs
-        self.val_size = 0.05
-        self.epochs = 7
-        self.batch_size = 256
-        self.dropout = 0.05
+        self.val_size = val_size
+        self.batch_size = batch_size
+        self.dropout = dropout
+        self.weight_decay = weight_decay
+        self.hidden_sizes = hidden_sizes
+        self.epochs = 30
         self.activation = "gelu"
         self.use_amp = True
-        self.weight_decay = 0.0
-        self.patience = 2
+        self.patience = 3
 
         # Fitted artifacts
         self._train_df = None
@@ -154,7 +172,7 @@ class Experiment:
         self.lr_ = self._parse_lr(self.classic_arch)
 
         # WandB state
-        self._wb_enabled = True
+        self._wb_enabled = False
         self._wb_run = None
         self._global_step = 0
 
@@ -163,6 +181,8 @@ class Experiment:
         self.checkpoint_dir = "./checkpoints"
         self.save_best_only = True
         self.checkpoint_every_n_epochs = 1  # Save checkpoint every N epochs
+        self.scheduler_step_size = 1
+        self.scheduler_gamma = 0.95
 
     def _parse_lr(self, token):
         # token format: "mlp@lr=0.000710"
@@ -190,7 +210,7 @@ class Experiment:
             # Save best model
             best_path = Path(self.checkpoint_dir) / "best_model.pt"
             torch.save(checkpoint, best_path)
-            self._wandb_log({"checkpoint/best_score": score, "checkpoint/best_epoch": epoch})
+            # self._wandb_log({"checkpoint/best_score": score, "checkpoint/best_epoch": epoch})
             
             # Also save metadata
             metadata = {
@@ -286,7 +306,7 @@ class Experiment:
     ):
         return MLP(
             self.input_dim_,
-            hidden_sizes=(512, 512, 512, 512),
+            hidden_sizes=self.hidden_sizes,
             dropout=self.dropout,
             act=self.activation,
         ).to(DEVICE)
@@ -308,14 +328,17 @@ class Experiment:
         self,
     ):
         optimizer = self._optimizer()
+        # scheduler = CosineAnnealingLR(
+        #     optimizer, T_max=int(self.epochs), eta_min=float(self.lr_) * 0.1
+        # )
         scaler = torch.cuda.amp.GradScaler(
             enabled=(self.use_amp and torch.cuda.is_available())
         )
         criterion = nn.BCEWithLogitsLoss()
 
         # wandb log gradients automatically (optional)
-        if self._wb_run is not None:
-            wandb.watch(self.model_, log="gradients", log_freq=100)
+        # if self._wb_run is not None:
+        #     wandb.watch(self.model_, log="gradients", log_freq=100)
 
         best_score = -1.0
         best_state = None
@@ -335,9 +358,9 @@ class Experiment:
                     loss = criterion(logits, yb)
                 scaler.scale(loss).backward()
 
-                # wandb grad norm
-                if scaler.is_enabled():
-                    scaler.unscale_(optimizer)
+                # # wandb grad norm
+                # if scaler.is_enabled():
+                #     scaler.unscale_(optimizer)
                 grad_norm = self._grad_l2_norm(self.model_)
                 lr_now = optimizer.param_groups[0]["lr"]
 
@@ -345,17 +368,17 @@ class Experiment:
                 scaler.update()
                 optimizer.zero_grad(set_to_none=True)
 
-                # wandb log per batch
-                # log per batch
-                self._global_step += 1
-                self._wandb_log(
-                    {
-                        "train/loss": float(loss.detach().cpu().item()),
-                        "train/grad_norm": grad_norm,
-                        "train/lr": lr_now,
-                        "train/epoch": epoch,
-                    }
-                )
+                # # wandb log per batch
+                # # log per batch
+                # self._global_step += 1
+                # self._wandb_log(
+                #     {
+                #         "train/loss": float(loss.detach().cpu().item()),
+                #         "train/grad_norm": grad_norm,
+                #         "train/lr": lr_now,
+                #         "train/epoch": epoch,
+                #     }
+                # )
 
             # Validate
             self.model_.eval()
@@ -385,14 +408,14 @@ class Experiment:
             # wandb compute average validation loss
             avg_val_loss = np.mean(val_losses) if val_losses else 0.0
 
-            # wandb log val accuracy (learning curve)
-            self._wandb_log(
-                {
-                    "val/accuracy": float(score),
-                    "val/loss": float(avg_val_loss),
-                    "train/epoch": epoch,
-                }
-            )
+            # # wandb log val accuracy (learning curve)
+            # self._wandb_log(
+            #     {
+            #         "val/accuracy": float(score),
+            #         "val/loss": float(avg_val_loss),
+            #         "train/epoch": epoch,
+            #     }
+            # )
 
             if score > best_score:
                 best_score = score
@@ -410,6 +433,15 @@ class Experiment:
                     self._save_checkpoint(epoch, score, is_best=False)
                 if no_improve > self.patience:
                     break
+        
+            # # Step scheduler
+            # scheduler.step()
+            # # Log updated LR after scheduler step
+            # updated_lr = optimizer.param_groups[0]["lr"]
+            # self._wandb_log({
+            #     "train/lr_after_scheduler": updated_lr,
+            #     "train/epoch": epoch,
+            # })
 
         if best_state is not None:
             self.model_.load_state_dict(best_state)
@@ -431,350 +463,118 @@ class Experiment:
         set_seed(42)
         self.data_processing()
         # wandb init
-        self._wandb_init()
+        # self._wandb_init()
 
         used_numeric = [c for c in self._numeric_cols]
-        used_categorical = [c for c in self._categorical_cols] + [
-            c for c in self._bool_cols
-        ]
+        used_categorical = [c for c in self._categorical_cols] + [c for c in self._bool_cols]
         X_df = self._train_df[used_numeric + used_categorical]
         Xt_df = self._test_df[used_numeric + used_categorical]
         y = self._y
 
-        numeric_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="mean")),
-                ("scaler", StandardScaler(with_mean=True)),
-            ]
-        )
-        categorical_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=True)),
-            ]
-        )
-        self._ct = ColumnTransformer(
-            transformers=[
-                ("num", numeric_transformer, used_numeric),
-                ("cat", categorical_transformer, used_categorical),
-            ],
-            remainder="drop",
-            sparse_threshold=0.3,
-        )
+        # 5-fold ensembling path
+        if getattr(self, "n_folds", 1) and int(self.n_folds) > 1:
+            skf = StratifiedKFold(n_splits=int(self.n_folds), shuffle=True, random_state=42)
+            fold_scores: list[float] = []
+            fold_test_probs: list[np.ndarray] = []
+            bs = int(self.batch_size)
+            old_ckpt_dir = self.checkpoint_dir
 
-        X_tr_df, X_va_df, y_tr, y_va = train_test_split(
-            X_df, y, test_size=self.val_size, stratify=y, random_state=42
-        )
-        self._ct.fit(X_tr_df)
-        X_tr = self._ct.transform(X_tr_df)
-        X_va = self._ct.transform(X_va_df)
-        X_te = self._ct.transform(Xt_df)
+            for fold_idx, (tr_idx, va_idx) in enumerate(skf.split(X_df, y)):
+                X_tr_df = X_df.iloc[tr_idx]
+                X_va_df = X_df.iloc[va_idx]
+                y_tr = y[tr_idx]
+                y_va = y[va_idx]
 
-        if hasattr(X_tr, "toarray"):
-            X_tr = X_tr.toarray()
-            X_va = X_va.toarray()
-            X_te = X_te.toarray()
-        X_tr = X_tr.astype(np.float32)
-        X_va = X_va.astype(np.float32)
-        X_te = X_te.astype(np.float32)
-
-        self.input_dim_ = X_tr.shape[1]
-
-        bs = int(self.batch_size)
-        ds_tr = TensorDataset(
-            torch.tensor(X_tr, dtype=torch.float32),
-            torch.tensor(y_tr.astype(np.float32)),
-        )
-        ds_va = TensorDataset(
-            torch.tensor(X_va, dtype=torch.float32),
-            torch.tensor(y_va.astype(np.float32)),
-        )
-        self.dl_tr = DataLoader(
-            ds_tr, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True
-        )
-        self.dl_va = DataLoader(
-            ds_va,
-            batch_size=max(1, bs * 2),
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True,
-        )
-
-        # Build & train
-        self.model_ = self.model()
-        # best_val = self.training()
-
-        # Validation predictions
-        self.model_.eval()
-        va_probs = []
-        with torch.no_grad():
-            for Xb, _ in self.dl_va:
-                Xb = (
-                    Xb[0].to(DEVICE) if isinstance(Xb, (list, tuple)) else Xb.to(DEVICE)
+                # Build a fresh preprocessor per fold
+                numeric_transformer = Pipeline(
+                    steps=[("imputer", SimpleImputer(strategy="mean"))
+                    # ,
+                        #    ("scaler", StandardScaler(with_mean=True))
+                           ]
                 )
-                logits = self.model_(Xb)
-                probs = torch.sigmoid(logits).view(-1)
-                va_probs.append(probs.detach().cpu().numpy())
-        va_probs = (
-            np.concatenate(va_probs)
-            if len(va_probs) > 0
-            else np.zeros_like(y_va, dtype=float)
-        )
-        score = self.evaluation(y_va, va_probs)
-
-        # Train on all data for final test predictions (a bit shorter to limit drift)
-        X_full = self._ct.transform(X_df)
-        X_te = self._ct.transform(Xt_df)
-
-        if hasattr(X_full, "toarray"):
-            X_full = X_full.toarray()
-            X_te = X_te.toarray()
-        X_full = X_full.astype(np.float32)
-        X_te = X_te.astype(np.float32)
-
-        ds_full = TensorDataset(
-            torch.tensor(X_full, dtype=torch.float32),
-            torch.tensor(y.astype(np.float32)),
-        )
-        self.dl_full = DataLoader(
-            ds_full, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True
-        )
-        ds_te = TensorDataset(torch.tensor(X_te, dtype=torch.float32))
-        self.dl_te = DataLoader(
-            ds_te,
-            batch_size=max(1, bs * 2),
-            shuffle=False,
-            num_workers=0,
-            pin_memory=True,
-        )
-
-        # # Load best checkpoint from initial training phase
-        # # self.model_ already has best weights from training(), but reload from disk for safety
-        checkpoint_path = Path(self.checkpoint_dir) / "best_model.pt"
-        # if checkpoint_path.exists():
-        #     print(f"Loading best checkpoint from {checkpoint_path} for full-data training")
-        #     checkpoint = self._load_checkpoint(checkpoint_path)
-        #     if checkpoint:
-        #         print(f"Resuming from epoch {checkpoint['epoch']} with score {checkpoint['score']:.6f}")
-        # else:
-        #     print("Warning: No checkpoint found, using current model state")
-        
-        if self.use_kfold_full:
-            skf = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=42)
-            fold_test_probs = []
-            
-            for fold_idx, (train_idx, val_idx) in enumerate(skf.split(X_full, y)):
-                print(f"Full-data fold {fold_idx + 1}/{self.n_folds}")
-                
-                # Split data for this fold
-                X_fold_tr = X_full[train_idx]
-                X_fold_va = X_full[val_idx]
-                y_fold_tr = y[train_idx]
-                y_fold_va = y[val_idx]
-                
-                # Create dataloaders
-                ds_fold_tr = TensorDataset(
-                    torch.tensor(X_fold_tr, dtype=torch.float32),
-                    torch.tensor(y_fold_tr.astype(np.float32))
+                categorical_transformer = Pipeline(
+                    steps=[("imputer", SimpleImputer(strategy="most_frequent")),
+                           ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=True))]
                 )
-                ds_fold_va = TensorDataset(
-                    torch.tensor(X_fold_va, dtype=torch.float32),
-                    torch.tensor(y_fold_va.astype(np.float32))
+                self._ct = ColumnTransformer(
+                    transformers=[
+                        ("num", numeric_transformer, used_numeric),
+                        ("cat", categorical_transformer, used_categorical),
+                    ],
+                    remainder="drop",
+                    sparse_threshold=0.3,
                 )
-                dl_fold_tr = DataLoader(
-                    ds_fold_tr, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True
+
+                self._ct.fit(X_tr_df)
+                X_tr = self._ct.transform(X_tr_df)
+                X_va = self._ct.transform(X_va_df)
+                X_te = self._ct.transform(Xt_df)
+
+                if hasattr(X_tr, "toarray"):
+                    X_tr = X_tr.toarray(); X_va = X_va.toarray(); X_te = X_te.toarray()
+                X_tr = X_tr.astype(np.float32); X_va = X_va.astype(np.float32); X_te = X_te.astype(np.float32)
+
+                self.input_dim_ = X_tr.shape[1]
+
+                ds_tr = TensorDataset(
+                    torch.tensor(X_tr, dtype=torch.float32),
+                    torch.tensor(y_tr.astype(np.float32)),
                 )
-                dl_fold_va = DataLoader(
-                    ds_fold_va, batch_size=max(1, bs*2), shuffle=False, num_workers=0, pin_memory=True
+                ds_va = TensorDataset(
+                    torch.tensor(X_va, dtype=torch.float32),
+                    torch.tensor(y_va.astype(np.float32)),
                 )
-                
-                # # Reinitialize model for each fold OR load checkpoint
-                # if checkpoint_path.exists() and fold_idx == 0:
-                #     # First fold: use loaded checkpoint
-                #     pass  # Model already loaded above
-                # else:
-                #     # Other folds: fresh model
+                self.dl_tr = DataLoader(ds_tr, batch_size=bs, shuffle=True, num_workers=0, pin_memory=True)
+                self.dl_va = DataLoader(ds_va, batch_size=max(1, bs * 2), shuffle=False, num_workers=0, pin_memory=True)
+
+                # Model per fold
                 self.model_ = self.model()
-                
-                optimizer = torch.optim.Adam(
-                    self.model_.parameters(), 
-                    lr=float(self.lr_) * 0.3,  # Lower LR for fine-tuning
-                    weight_decay=self.weight_decay
-                )
-                scaler = torch.cuda.amp.GradScaler(
-                    enabled=(self.use_amp and torch.cuda.is_available())
-                )
-                criterion = nn.BCEWithLogitsLoss()
-                
-                best_fold_score = -1.0
-                best_fold_state = None
-                no_improve_fold = 0
-                
-                for epoch in range(max(1, int(self.epochs) - 3)):
-                    self.model_.train()
-                    optimizer.zero_grad(set_to_none=True)
-                    
-                    for Xb, yb in dl_fold_tr:
-                        Xb = Xb.to(DEVICE, non_blocking=True)
-                        yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
-                        with torch.cuda.amp.autocast(
-                            enabled=(self.use_amp and torch.cuda.is_available())
-                        ):
-                            logits = self.model_(Xb)
-                            loss = criterion(logits, yb)
-                        scaler.scale(loss).backward()
 
-                        if scaler.is_enabled():
-                            scaler.unscale_(optimizer)
-                        grad_norm = self._grad_l2_norm(self.model_)
-                        lr_now = optimizer.param_groups[0]["lr"]
+                # Isolate checkpoints per fold
+                self.checkpoint_dir = str(Path(old_ckpt_dir) / f"fold_{fold_idx}")
 
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad(set_to_none=True)
+                # Train and track best fold score
+                best_val = self.training()
+                fold_scores.append(float(best_val))
 
-                        self._global_step += 1
-                        self._wandb_log(
-                            {
-                                f"full/fold_{fold_idx}/loss": float(loss.detach().cpu().item()),
-                                f"full/fold_{fold_idx}/grad_norm": grad_norm,
-                                f"full/fold_{fold_idx}/lr": lr_now,
-                                f"full/fold_{fold_idx}/epoch": epoch,
-                            }
-                        )
-                    
-                    # Validate on fold's validation set
-                    self.model_.eval()
-                    fold_preds, fold_tgts = [], []
-                    with torch.no_grad():
-                        for Xv, yv in dl_fold_va:
-                            Xv = Xv.to(DEVICE, non_blocking=True)
-                            yv = yv.to(DEVICE, non_blocking=True).view(-1, 1)
-                            logits = self.model_(Xv)
-                            probs = torch.sigmoid(logits).view(-1)
-                            preds = (probs >= 0.5).long()
-                            fold_preds.append(preds.detach().cpu().numpy())
-                            fold_tgts.append(yv.view(-1).long().detach().cpu().numpy())
-                    
-                    if len(fold_preds) > 0:
-                        fold_pred = np.concatenate(fold_preds)
-                        fold_tgt = np.concatenate(fold_tgts)
-                        fold_score = (fold_pred == fold_tgt).mean()
-                    else:
-                        fold_score = 0.0
-                    
-                    self._wandb_log({
-                        f"full/fold_{fold_idx}/val_accuracy": float(fold_score),
-                        f"full/fold_{fold_idx}/epoch": epoch,
-                    })
-                    
-                    if fold_score > best_fold_score:
-                        best_fold_score = fold_score
-                        best_fold_state = {k: v.detach().cpu().clone() 
-                                          for k, v in self.model_.state_dict().items()}
-                        no_improve_fold = 0
-                    else:
-                        no_improve_fold += 1
-                        if no_improve_fold > self.patience:
-                            break
-                
-                # Load best fold weights
-                if best_fold_state is not None:
-                    self.model_.load_state_dict(best_fold_state)
-                
-                # Get test predictions for this fold
+                # Inference on test for this fold
+                ds_te = TensorDataset(torch.tensor(X_te, dtype=torch.float32))
+                dl_te = DataLoader(ds_te, batch_size=max(1, bs * 2), shuffle=False, num_workers=0, pin_memory=True)
+                test_probs = []
                 self.model_.eval()
-                fold_test_probs_batch = []
                 with torch.no_grad():
-                    for (Xb,) in self.dl_te:
+                    for (Xb,) in dl_te:
                         Xb = Xb.to(DEVICE, non_blocking=True)
                         logits = self.model_(Xb)
                         probs = torch.sigmoid(logits).view(-1)
-                        fold_test_probs_batch.append(probs.detach().cpu().numpy())
-                
-                fold_test_probs.append(
-                    np.concatenate(fold_test_probs_batch) 
-                    if len(fold_test_probs_batch) > 0 
+                        test_probs.append(probs.detach().cpu().numpy())
+                test_probs = (
+                    np.concatenate(test_probs)
+                    if len(test_probs) > 0
                     else np.zeros(self._test_df.shape[0], dtype=float)
                 )
-                
-                # Clean up
-                del self.model_
-                torch.cuda.empty_cache()
-                gc.collect()
-            
-            # Average predictions across folds
-            test_probs = np.mean(fold_test_probs, axis=0)
-            
-            # Log fold statistics
-            self._wandb_log({
-                "full/kfold_mean_test_prob": float(np.mean(test_probs)),
-                "full/kfold_std_test_prob": float(np.std(test_probs)),
-            })
-        
-        else:
-            self.model_ = self.model()
-            # self.model_ = self.model()
-            optimizer = torch.optim.Adam(
-                self.model_.parameters(), lr=float(self.lr_), weight_decay=self.weight_decay
-            )
-            scaler = torch.cuda.amp.GradScaler(
-                enabled=(self.use_amp and torch.cuda.is_available())
-            )
-            criterion = nn.BCEWithLogitsLoss()
-            for epoch in range(max(1, int(self.epochs) - 3)):
-                self.model_.train()
-                optimizer.zero_grad(set_to_none=True)
-                for Xb, yb in self.dl_full:
-                    Xb = Xb.to(DEVICE, non_blocking=True)
-                    yb = yb.to(DEVICE, non_blocking=True).view(-1, 1)
-                    with torch.cuda.amp.autocast(
-                        enabled=(self.use_amp and torch.cuda.is_available())
-                    ):
-                        logits = self.model_(Xb)
-                        loss = criterion(logits, yb)
-                    scaler.scale(loss).backward()
+                fold_test_probs.append(test_probs)
 
-                    # wandb grad norm
-                    if scaler.is_enabled():
-                        scaler.unscale_(optimizer)
-                    grad_norm = self._grad_l2_norm(self.model_)
-                    lr_now = optimizer.param_groups[0]["lr"]
+                # restore
+                self.checkpoint_dir = old_ckpt_dir
 
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
+                # # optional: log per-fold
+                # self._wandb_log({"cv/fold": fold_idx, "cv/fold_val_acc": float(best_val)})
 
-                    # wandb log per epoch
-                    self._global_step += 1
-                    self._wandb_log(
-                        {
-                            "full/loss": float(loss.detach().cpu().item()),
-                            "full/grad_norm": grad_norm,
-                            "full/lr": lr_now,
-                            "full/epoch": epoch,
-                        }
-                    )
+            # Ensemble by averaging fold probabilities
+            best_val = float(np.mean(fold_scores))
+            best_test_probs = np.mean(np.vstack(fold_test_probs), axis=0)
 
-            self.model_.eval()
-            test_probs = []
-            with torch.no_grad():
-                for (Xb,) in self.dl_te:
-                    Xb = Xb.to(DEVICE, non_blocking=True)
-                    logits = self.model_(Xb)
-                    probs = torch.sigmoid(logits).view(-1)
-                    test_probs.append(probs.detach().cpu().numpy())
-            test_probs = (
-                np.concatenate(test_probs)
-                if len(test_probs) > 0
-                else np.zeros(self._test_df.shape[0], dtype=float)
-            )
+            # self._wandb_log({
+            #     "cv/val_mean": best_val,
+            #     "cv/val_std": float(np.std(fold_scores)),
+            #     "cv/n_folds": int(self.n_folds),
+            # })
 
-        # Finish WandB
-        if self._wb_run is not None:
-            wandb.finish()
+            # if self._wb_run is not None:
+            #     wandb.finish()
 
-        return (0.8, test_probs)
+            return (best_val, best_test_probs)
 
     # ------------------------
     # WandB helpers
@@ -813,11 +613,11 @@ class Experiment:
         return sq**0.5
 
 
-exp_template = Experiment()
+# exp_template = Experiment()
 
 
-def smoke_test():
-    pass
+# def smoke_test():
+#     pass
 
 
 # ----------------------------
@@ -832,12 +632,61 @@ best_score, best_exp = None, None
 best_test_probs = None
 # authentication key for models from Huggingface
 auth_token = os.getenv("HUGGINGFACE_KEY")
-_timeout = 405
+_timeout = 600
 run, trial = 1, 1
 
-result = run_with_timeout(exp_template.run, timeout_sec=_timeout)
-success, (best_score, best_test_probs) = result
+# global run, trial, best_score, best_exp, best_test_probs, _timeout
+# algo = pg.evolution.regularized_evolution(
+#     population_size=64, tournament_size=6, seed=42
+# )
+
+# with open("/home/agent/output.txt", "w") as output_file:
+#     output_file.write("Model performance\n")
+# Limit the upper bound of total trial to avoid infinite loop
+for exp, feedback in pg.sample(exp_template, pg.geno.Sweeping()):
+    # with open("/home/agent/running.txt", "w") as running_exp:
+    #     running_exp.write(f"{exp}")
+
+    result = run_with_timeout(exp.run, timeout_sec=_timeout)
+
+    if not result[0]:
+        # Give it a bad score
+        feedback(float("-inf"))
+        # Clean up GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        continue
+
+    success, (score, test_probs) = result
+    feedback(score)
+
+    # with open("/home/agent/output.txt", "a") as output_file:
+    #     output_file.write(f"\n=== Trial {run} ===\n")
+    #     output_file.write(f"Validation score: {score:.6f}\n")
+    #     output_file.write(f"Tested parameters: {exp}\n")
+
+    print(f"\n=== Trial {feedback.id} ===\n")
+    print(f"Validation score: {score:.6f}\n")
+    print(f"Tested parameters: {exp}\n")
+
+    # Track best
+    if best_score is None or score > best_score:
+        best_score = score
+        best_test_probs = test_probs
+        best_exp = exp
+
+    score = float("-inf")
+    run += 1
+    # trial += 1 if i > 64 else 0  # Warm-up phase does not count towards trial count
+
+print(f"\n=== Search Complete ===")
 print(f"Best Validation Score: {best_score:.6f}")
+print(f"Best Parameters: {best_exp}")
+
+# result = run_with_timeout(exp_template.run, timeout_sec=_timeout)
+# success, (best_score, best_test_probs) = result
+# print(f"Best Validation Score: {best_score:.6f}")
 
 # ----------------------------
 # Finished

@@ -327,7 +327,7 @@ class Agent:
             "convert_system_to_user": self.acfg.convert_system_to_user,
         }
 
-        logger.info("convert_system_to_user: ", self.acfg.convert_system_to_user)
+        logger.info(f"convert_system_to_user: {self.acfg.convert_system_to_user}")
 
         if self.acfg.roulette_enabled and self.acfg.roulette_models:
             models = [cfg.model for cfg in self.acfg.roulette_models]

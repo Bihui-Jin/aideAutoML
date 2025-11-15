@@ -174,10 +174,7 @@ def full_search():
     with open('/home/agent/output.txt', 'w') as output_file:
         output_file.write("Model performance\n")
     # Limit the upper bound of total trial to avoid infinite loop
-    for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=164)):
-        # Limit to 60 trial
-        if trial > 60:
-            break
+    for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=3800)):
 
         with open('/home/agent/running.txt', 'w') as running_exp:
             running_exp.write(f"{exp}")
@@ -197,7 +194,7 @@ def full_search():
         feedback(score)
 
         with open('/home/agent/output.txt', 'a') as output_file:
-            output_file.write(f"\n=== Trial {run} ===\n")
+            output_file.write(f"\n=== Trial {i} ===\n")
             output_file.write(f"Validation score: {score:.6f}\n")
             output_file.write(f"Tested parameters: {exp}\n")
 
@@ -209,7 +206,6 @@ def full_search():
         
         score = float('-inf')
         run += 1
-        trial += 1 if i > 64 else 0 # Warm-up phase does not count towards trial count
 
     print(f"\n=== Search Complete ===")
     print(f"Best Validation Score: {best_score:.6f}")

@@ -16,15 +16,16 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
     - If a Transformer is selected: load with `AutoModelForSequenceClassification.from_pretrained(backbone, num_labels=NUM_LABELS, trust_remote_code=True, token=auth_token)`.  
     - If classic: expose complex layers/widths/activations/dropouts (and MoE experts/routing). Ensure logits shape and dtype are consistent with the task.
   - `_optimizer(...)`: Choose from `pg.oneof(['Adam','AdamW','SGD','RMSprop', etc.])` as blow suggested. 
-  - `training(...)`: Implement a proper loop with **symbolic** `epochs`, `batch_size` (grid sized for GPU memory, e.g., `{8, 16, 32}` for Transformers; `{64, 128, 256}` for classics), optional **gradient_accumulation_steps ∈ {1,2,4,8}**, **AMP** (`torch.cuda.amp.autocast` + `GradScaler`) and **early stopping** knobs `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}}`.  
+  - `training(...)`: Implement a proper loop with **symbolic** `epochs`, `batch_size` (grid sized for GPU memory, e.g., `{8, 16, 32}` for Transformers; `{64, 128, 256}` for classics), optional **gradient_accumulation_steps ∈ {1,2,4,8}**, **AMP** (e.g., `torch.cuda.amp.autocast` + `GradScaler`) and **early stopping** knobs `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0, 1e-4}}`.  
     - **Shape/contracts**:
       *Classic branch*: batches are `(X, y)` dense tensors.  
       *Transformer branch*: batches are `({'input_ids','attention_mask', optional 'token_type_ids'}, y)` dicts.  
     - **OOM Backoff (required)**: If CUDA OOM occurs in a Transformer run, automatically retry once with **smaller `batch_size` and/or smaller `max_length`** (halve batch_size; then reduce max_length to next lower grid value), then continue. Clear cache with `torch.cuda.empty_cache()` between retries/trials.
+    - **Checkpoints (required)**: Must use checkpoints to save the best-performing model based on validation set performance.
   - `evaluation(...)`: Compute and return the **competition metric**. For lower-is-better metrics (e.g., RMSE), return its **negative** value. 
-  - `run(...)`: Build features; split train/valid (stratified for classification). Train, compute `score`, then **refit on full train** with the same hyperparameters (may skip early stop here for speed). Predict test probabilities in the correct order and `return (score, test_probs)`.
+  - `run(...)`: Build features; split train/valid (stratified for classification). Choose whether use k-folds via a symbolic knob, where use_kfold_full ∈ {True,False} and n_folds ∈ {3,5}. Train on the train/valid set to compute `score`. Load the best model from checkpoints before predicting test probabilities in the correct order and `return (score, test_probs)`.
 - Explicit Knob Declarations (force concrete candidate lists): You MUST declare the following search-space candidates exactly as listed below:
-  - classic_arch is to list all kinds of classic architectures, e.g., mlp, RandomForest, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
+  - classic_arch is to list all kinds of classic architectures, e.g., CatBoostClassifier, RandomForestClassifier, KNeighborsClassifier, mlp, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
   - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct, intfloat/e5-small-v2, and Alibaba-NLP/gte-base-en-v1.5.
 - Experiment Interface Contact (NO MISSING ATTRS):
   - Single source of truth: In Experiment.__init__, declare every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).
@@ -97,10 +98,10 @@ Select the relevant subset based on task type you infer from the competition tex
 
 3) **Optimizer & Training Search Space** Suggestions
    - `_optimizer`: Consider symbolic knobs but **not limit to**: use pg.oneof to select from Adam, AdamW, RMSprop, SGD, Momentum, Nesterov, Nadam, Adamax, Adagrad, Adadelta, LBFGS, SAGA, SAG, Newton-CG, liblinear, RectifiedAdam, Lookahead, MADGRAD, SLSQP, Nelder-Mead, etc.
-   - `training`: implement a mini training loop over `epochs` (e.g., {4,5}) with `batch_size` choices (e.g., {128,256}), criterion choice could be:
-     - Binary classification: `BCEWithLogitsLoss`.
-     - Multiclass: `CrossEntropyLoss`.
-     - Regression: `MSELoss` (report negative RMSE as score for “higher-is-better” convention).
+   - `training`: implement a mini training loop over `epochs` (e.g., {4,5,10}) with `batch_size` choices (e.g., {64,128,256}), criterion choice could be:
+     - Binary classification: `BCEWithLogitsLoss` etc.
+     - Multiclass: `CrossEntropyLoss` etc.
+     - Regression: `MSELoss` (report negative RMSE as score for “higher-is-better” convention) etc.
    - Optional early stopping knobs: `{enabled ∈ {True,False}, patience ∈ {2,3,4}, min_delta ∈ {0.0,1e-4}}`. If enabled, monitor validation metric and restore best weights.
 
 4) **smoke_test()** requirements (fast, minimal sanity run)
@@ -108,7 +109,7 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
    - Run matrix: Execute:
      - Exactly one HF trial using the first candidate from `hf_backbone` (respecting the tokenizer/model path and collate for dict-inputs).
      - All classic arches (i.e., iterate through every non-"hf" option listed in `classic_arch`) with the classic/dense pipeline and collate.
-     - Instantiate `Experiment` by setting every declared knob declared in `__init__` in a single constructor call, choosing one valid option for each pg.oneof/manyof/floatv knob; knobs should be consistent for either the HF or classic branch.
+     - Instantiate `Experiment` by setting every declared knob declared in `__init__` in a single constructor call, choosing one valid option for each pg.oneof/manyof/floatv knob; knobs should be consistent for either the HF or classic branch. **Do not introduce or use new attribute names outside Experiment.__init__**.
      - Reuse the existing run_with_timeout.
    - Transformer family smoke test:
      - Construct a minimal Experiment with:
@@ -158,13 +159,13 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
 - For tokenizers/models, pass the HF auth token via `auth_token = os.getenv("HUGGINGFACE_KEY")`.  
 - Set `trust_remote_code=True` to allow for executing the configuration file on the local machine.
 - Prefer mixed precision for Transformers; consider activation checkpointing if easily available.  
-- When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model(**inputs) match the selected backbone's accepted arguments.
+- When building transformer batches, pass only the fields returned by the tokenizer-do not synthesize token_type_ids if they are not provided. Ensure the **inputs you pass to model** match the selected backbone's accepted arguments.
 - If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.
 - Enforce a single data/model branch per trial. If model_family contains HF backbone, force to use TransformerTextDataset + make_transformer_collate, batch_size_transformer, lr_transformer, etc; do not build or consume TF-IDF/Hashing/SVD/scalers, and never use ClassicTensorDataset/classic_collate. If model_family is classic, force to use dense features with ClassicTensorDataset + classic_collate, batch_size_classic, lr_classic, etc; do not instantiate HF tokenizer/model/collate or feed dict-style batches. Insert hard checks: raise if (HF ∧ classic features/collate) or (classic ∧ transformer tokenizer/collate). Maintain consistency across training/validation/test loaders.
 - Diagnose and fix the transformer branch so TransformerDataset never assumes .shape on lists: normalize all tokenizer outputs to NumPy arrays (e.g., {k: np.asarray(v, dtype=np.int64)}) or PyTorch tensors before dataset creation, and compute length with len(encodings["input_ids"]).
-- Experiment.__init__ declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests). Do not introduce or use new attribute names outside Experiment.__init__ in `smoke_test()`; it is forbidden to access attributes not declared in __init__. Instead, use the provided attributes in __init__."
+- Experiment.__init__ declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests). **Do not introduce or use new attribute names outside Experiment.__init__ in `smoke_test()` or in Experiment(); it is forbidden to access attributes not declared in __init__. Instead, use the provided attributes in __init__.**
 
 Now, FILL IN THE TEMPLATE:
-- Declare all PyGlove knobs in `__init__`.
+- Declare all PyGlove knobs in `__init__`; Do not use or introduce attributes that are not defined there in order to avoid AttributeError.
 - Implement `data_processing`, `model`, `_optimizer`, `training`, `evaluation`, `run` exactly as specified above.
 - Ensure `run()` returns `(score, test_probs)` and that the code runs end-to-end without modification.

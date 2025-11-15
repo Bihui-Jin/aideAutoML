@@ -25,6 +25,7 @@ Your job is to IMPROVE a previously developed PyGlove + PyTorch NAS solution by 
          - Example (hidden size near 256–384):  
             `pg.oneof([192, 224, 256, 288, 320, 352, 384])`
       - Prefer **dense local grids** over broad coarse ranges. Expand **around** the best region with a **small step size** (e.g., ±20–30% window, step by 5–10%).
+      - If a numeric optimal value lies on the **boundary** (i.e., index_at == -1 in the list of lr, hidden_size, depth, etc.), **extend** that boundary by 10% to explore previously uncovered regions of the search space.
 
 2) **Increase the training sample size a bit** while respecting runtime.
    - Reduce holdout size subtly (e.g., `valid_size` from `0.2` to `0.15` or `0.10`) to train on more data.
