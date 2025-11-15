@@ -361,7 +361,7 @@ class Agent:
         logger.info("Final plan + code extraction attempt failed, giving up...")
         return "", completion_text  # type: ignore
 
-    def plan_query(self, prompt, qType=None) -> tuple[str, str]:
+    def plan_query(self, prompt, qType=None, model=None) -> tuple[str, str]:
         """Generate a natural language plan + code in the same LLM call and split them apart."""
         completion_text = None
 
@@ -371,7 +371,9 @@ class Agent:
             "model": self.acfg.code.model if qType != "_debug" else self.acfg.debug.model,
             "convert_system_to_user": self.acfg.convert_system_to_user,
         }
-
+        if model:
+            query_kwargs["model"] = "gpt-5"
+            
         if query_kwargs["model"] != "gpt-5":
             query_kwargs["temperature"] = self.acfg.code.temp
 
@@ -606,7 +608,7 @@ class Agent:
             "Model performance": wrap_code(output_perf, lang=""),
             "Instructions": summarize_model_performance_prompt,
         }
-        model_performance = self.plan_query(summary_prompt, qType="_summarize_model_performance")
+        model_performance = self.plan_query(summary_prompt, qType="_summarize_model_performance", model = "gpt-5")
         logger.info(f"Model performance summary:\n{model_performance}")
 
         prompt["Model performance"] = model_performance

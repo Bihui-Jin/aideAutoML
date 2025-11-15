@@ -193,10 +193,12 @@ def full_search():
         success, (score, test_probs) = result
         feedback(score)
 
-        with open('/home/agent/output.txt', 'a') as output_file:
-            output_file.write(f"\n=== Trial {i} ===\n")
-            output_file.write(f"Validation score: {score:.6f}\n")
-            output_file.write(f"Tested parameters: {exp}\n")
+        if i >= 64:
+            with open('/home/agent/output.txt', 'a') as output_file:
+                output_file.write(f"\n=== Trial {run} ===\n")
+                output_file.write(f"Validation score: {score:.6f}\n")
+                output_file.write(f"Tested parameters: {exp}\n")
+            run += 1
 
         # Track best
         if best_score is None or score > best_score:
@@ -205,7 +207,6 @@ def full_search():
             best_exp = exp
         
         score = float('-inf')
-        run += 1
 
     print(f"\n=== Search Complete ===")
     print(f"Best Validation Score: {best_score:.6f}")
