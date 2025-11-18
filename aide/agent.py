@@ -453,7 +453,7 @@ class Agent:
         if self.journal.generate_summary():
             prompt["Memory"] = self.journal.generate_summary()
         if self.acfg.data_preview:
-            prompt["Data overview"] = self.data_preview
+            prompt["Data overview"] = self.data_preview + "\nNote that all data files are read-only."
         
         prompt["Instructions"] = {}
         prompt["Instructions"] |= self._prompt_resp_fmt
