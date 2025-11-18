@@ -28,7 +28,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
   - classic_arch is to list all kinds of classic architectures, e.g., CatBoostClassifier, RandomForestClassifier, KNeighborsClassifier, mlp, moe, dcn, hf, where hf switches the pipeline into the Transformer branch; all other options are classic/tabular/text-classic branches. Keep "hf" in classic_arch to route the Transformer branch.
   - hf_backbone is to list at least 6 robust models from HuggingFace (post-2023 only), e.g., Qwen/Qwen2-1.5B-Instruct, intfloat/e5-small-v2, and Alibaba-NLP/gte-base-en-v1.5.
 - Experiment Interface Contact (NO MISSING ATTRS):
-  - Single source of truth: In Experiment.__init__, declare every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).
+  - Single source of truth: `Experiment.__init__` declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).
   - No ad-hoc attributes: Do not introduce new attribute names outside __init__. If you need a new flag, add it to __init__ with a default and type-appropriate PyGlove symbol. It is forbidden to access attributes not declared in __init__.
 - Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
@@ -109,7 +109,6 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
    - Run matrix: Execute:
      - Exactly one HF trial using the first candidate from `hf_backbone` (respecting the tokenizer/model path and collate for dict-inputs).
      - All classic arches (i.e., iterate through every non-"hf" option listed in `classic_arch`) with the classic/dense pipeline and collate.
-     - Instantiate `Experiment` by setting every declared knob declared in `__init__` in a single constructor call, choosing one valid option for each pg.oneof/manyof/floatv knob; knobs should be consistent for either the HF or classic branch. **Do not introduce or use new attribute names outside Experiment.__init__**.
      - Reuse the existing run_with_timeout.
    - Transformer family smoke test:
      - Construct a minimal Experiment with:
@@ -163,9 +162,8 @@ You MUST implement smoke_test() to run **two ultra-short** trials-one per family
 - If a HF backbone is chosen, build only the HF model; keep BCE shapes consistent (logits.view(-1,1) vs y.view(-1,1)) and avoid mixing classic/transformer collates.
 - Enforce a single data/model branch per trial. If model_family contains HF backbone, force to use TransformerTextDataset + make_transformer_collate, batch_size_transformer, lr_transformer, etc; do not build or consume TF-IDF/Hashing/SVD/scalers, and never use ClassicTensorDataset/classic_collate. If model_family is classic, force to use dense features with ClassicTensorDataset + classic_collate, batch_size_classic, lr_classic, etc; do not instantiate HF tokenizer/model/collate or feed dict-style batches. Insert hard checks: raise if (HF ∧ classic features/collate) or (classic ∧ transformer tokenizer/collate). Maintain consistency across training/validation/test loaders.
 - Diagnose and fix the transformer branch so TransformerDataset never assumes .shape on lists: normalize all tokenizer outputs to NumPy arrays (e.g., {k: np.asarray(v, dtype=np.int64)}) or PyTorch tensors before dataset creation, and compute length with len(encodings["input_ids"]).
-- Experiment.__init__ declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests). **Do not introduce or use new attribute names outside Experiment.__init__ in `smoke_test()` or in Experiment(); it is forbidden to access attributes not declared in __init__. Instead, use the provided attributes in __init__.**
 
 Now, FILL IN THE TEMPLATE:
-- Declare all PyGlove knobs in `__init__`; Do not use or introduce attributes that are not defined there in order to avoid AttributeError.
+- Declare all PyGlove knobs in `__init__`; Make sure all usages of attributes defined in the `Experiment` class's `__init__` method to ensure they are consistently defined and to prevent AttributeError exceptions.
 - Implement `data_processing`, `model`, `_optimizer`, `training`, `evaluation`, `run` exactly as specified above.
 - Ensure `run()` returns `(score, test_probs)` and that the code runs end-to-end without modification.

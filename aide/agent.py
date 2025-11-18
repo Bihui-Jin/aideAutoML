@@ -1029,11 +1029,15 @@ class Agent:
                 "Do not add or enforce timeouts.",
                 "Do not introduce or depend on trial-count caps; assume any existing caps in the template are soft and unrelated to correctness."
             ],
-            "Experiment Interface Contact (NO MISSING ATTRS)": [
-                "In Experiment.__init__, it declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).",
-                "No ad-hoc attributes: Do not introduce new attribute names outside Experiment.__init__; it is forbidden to access attributes not declared in __init__. Instead, use the provided attributes in __init__."
-            ],
         }
+
+        if "AttributeError" in buggy_code:
+            prompt["Instructions"] |= {
+                "AttributeError Handling": [
+                    "`Experiment.__init__` declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).",
+                    "**Review and update** all usages of attributes defined in the `Experiment` class's `__init__` method to ensure they are consistently defined and to prevent AttributeError exceptions.",
+                ]
+            }
 
         # prompt["Instructions"] |= self._prompt_impl_guideline
         
