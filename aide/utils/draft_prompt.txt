@@ -4,6 +4,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 - Frameworks: Use **PyTorch** (run on GPU via `DEVICE`). You may instantiate **Mixture-of-Experts (MoE)**, use **scikit-learn** for preprocessing, and integrate **HuggingFace Transformers** or **timm** backbones where appropriate. 
 - Search Spaces (PyGlove): Define **all tunable knobs** with `pg.oneof([candidates])` (choose 1 out of N candidates), `pg.floatv(min, max)` (a float value from R[min,max]), `pg.manyof(K, [candidates], θ)` (choose K out of N candidates with optional constraints θ on the uniqueness and order of chosen candidates), or `pg.permutate([candidates])` (a special case of manyof which searches for a permutation of all candidates).  
   - Do **NOT** pass `default` to `pg.oneof` (not supported).  
+  - Include at least five options for each.
   - Every symbolic choice must have concrete candidate values so the script runs immediately (no empty candidate sets).
 - Keep the provided class/method signatures and the outer NAS loop/timeout helper **unchanged**.
 - Decorate `Experiment` with `@pg.symbolize` and fill:
@@ -30,7 +31,7 @@ Your task is to FILL IN the provided Python Code Template as the returned markdo
 - Experiment Interface Contact (NO MISSING ATTRS):
   - Single source of truth: `Experiment.__init__` declares every attribute that may be read anywhere in the script (training, data, model, evaluation, smoke tests).
   - No ad-hoc attributes: Do not introduce new attribute names outside __init__. If you need a new flag, add it to __init__ with a default and type-appropriate PyGlove symbol. It is forbidden to access attributes not declared in __init__.
-- Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions.
+- Save a valid **submission** at `submission/submission.csv` with correct columns/format inferred from the instructions. **Ensure best submission is saved.**
 - **Do NOT add any new print/logging statements anywhere.** Do not log while saving the CSV.
 
 ## INPUTS YOU CAN RELY ON

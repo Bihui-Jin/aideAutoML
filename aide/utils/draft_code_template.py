@@ -174,7 +174,7 @@ def full_search():
     with open('/home/agent/output.txt', 'w') as output_file:
         output_file.write("Model performance\n")
     # Limit the upper bound of total trial to avoid infinite loop
-    for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=3800)):
+    for i, (exp, feedback) in enumerate(pg.sample(exp_template, algo, num_examples=964)):
 
         with open('/home/agent/running.txt', 'w') as running_exp:
             running_exp.write(f"{exp}")
@@ -193,7 +193,7 @@ def full_search():
         success, (score, test_probs) = result
         feedback(score)
 
-        if i >= 64:
+        if i >= 364:
             with open('/home/agent/output.txt', 'a') as output_file:
                 output_file.write(f"\n=== Trial {run} ===\n")
                 output_file.write(f"Validation score: {score:.6f}\n")

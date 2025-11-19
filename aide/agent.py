@@ -15,6 +15,7 @@ import textwrap
 import os
 import sys
 import re
+import tiktoken
 
 import humanize
 from .backend import FunctionSpec, compile_prompt_to_md, query
@@ -361,6 +362,60 @@ class Agent:
         logger.info("Final plan + code extraction attempt failed, giving up...")
         return "", completion_text  # type: ignore
 
+    def truncate_text(self, usr_text: str, sys_prompt: str) -> str:
+        """Truncate text to a maximum length, preserving the start and end."""
+        def remove_oldest_trial(text: str) -> str:
+            """
+            Remove the oldest trial block from the text.
+            Each block starts with '=== Trial N ===' and ends just before the next trial.
+            
+            Args:
+                text: The full text containing trial results
+                
+            Returns:
+                Text with the oldest (lowest numbered) trial removed
+            """
+            # Find all trial headers with their positions
+            pattern = r'=== Trial (\d+) ==='
+            matches = list(re.finditer(pattern, text))
+            
+            if len(matches) < 2:
+                # Need at least 2 trials to remove one
+                return text
+            
+            # Find the oldest trial (lowest number)
+            oldest_match = min(matches, key=lambda m: int(m.group(1)))
+            oldest_num = int(oldest_match.group(1))
+            
+            # Find the next trial after the oldest
+            next_match = None
+            for match in matches:
+                if int(match.group(1)) > oldest_num:
+                    if next_match is None or int(match.group(1)) < int(next_match.group(1)):
+                        next_match = match
+            
+            if next_match is None:
+                # Oldest is the last trial, remove from its start to end
+                return text[:oldest_match.start()]
+            
+            # Remove from oldest trial start to next trial start
+            return text[:oldest_match.start()] + text[next_match.start():]
+            
+        max_length: int = 272_000
+        encoding = tiktoken.encoding_for_model("gpt-5")
+        sys_tokens = len(encoding.encode(sys_prompt))
+        usr_tokens = len(encoding.encode(usr_text))
+
+        if usr_tokens+sys_tokens <= max_length:
+            return usr_text
+        
+        while usr_tokens+sys_tokens > max_length:
+            # Remove 1 trial from the oldest
+            usr_text = remove_oldest_trial(usr_text)
+            usr_tokens = len(encoding.encode(usr_text))
+        
+        return usr_text
+        
     def plan_query(self, prompt, qType=None, model=None) -> tuple[str, str]:
         """Generate a natural language plan + code in the same LLM call and split them apart."""
         completion_text = None
@@ -605,9 +660,11 @@ class Agent:
             summarize_model_performance_prompt = f.read()
         summary_prompt = {
             "Is the score higher the better": "Yes, the higer the better." if self.higher_better else "No, the lower the better.",
-            "Model performance": wrap_code(output_perf, lang=""),
+            "Model performance": "",
             "Instructions": summarize_model_performance_prompt,
         }
+        output_perf = self.truncate_text(output_perf, summary_prompt)
+        summary_prompt["Model performance"] = wrap_code(output_perf, lang="")
         model_performance = self.plan_query(summary_prompt, qType="_summarize_model_performance", model = "gpt-5")
         logger.info(f"Model performance summary:\n{model_performance}")
 
@@ -637,7 +694,7 @@ class Agent:
             "Your previous solution had a bug and/or did not produce a submission.csv."
             f"{parent_node.analysis if parent_node.analysis else ''} "
             "Based on the information below, fix bugs only without introducing new bugs and changing the overall search space and non buggy code logic. "
-            "Your response should not change the code architecture in `PyGlove` format and use `PyGlove` still. "
+            "Your response should not change the code architecture in `PyGlove` format and search space in knobs, and use `PyGlove` still. "
             "Your response should be an implementation outline in natural language,"
             " followed by a single markdown code block which implements the bugfix/solution."
         )
