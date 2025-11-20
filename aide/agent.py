@@ -403,6 +403,7 @@ class Agent:
             
         max_length: int = 272_000
         encoding = tiktoken.encoding_for_model("gpt-5")
+        sys_prompt = compile_prompt_to_md(sys_prompt)
         sys_tokens = len(encoding.encode(sys_prompt))
         usr_tokens = len(encoding.encode(usr_text))
 
